@@ -1,0 +1,10 @@
+# Copy to config.toml. Nothing here is secret; personal data lives in data_dir.
+# data_dir = "/path/to/project_tailor_data"   # default: ~/project_tailor_data
+
+[model]
+kind = "stub"                          # "http" | "shell" | "stub"
+base_url = "http://localhost:11434/v1" # kind = "http": any OpenAI-compatible endpoint
+model = "qwen3:8b"
+command = []                           # kind = "shell": e.g. ["python", "run_qwen.py"]; prompt arrives on stdin
+timeout_s = 600
+think = false                          # true lets Qwen3 reason first: about 10x slower for short answers
