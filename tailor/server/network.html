@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="tailor-token" content="__TAILOR_TOKEN__" />
+<title>Tailor Network</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:      #0b0d12;
+    --surface: #11141c;
+    --card:    #181c27;
+    --border:  #222636;
+    --accent:  #4f9cf9;
+    --accent2: #a78bfa;
+    --green:   #34d399;
+    --red:     #f87171;
+    --amber:   #fbbf24;
+    --txt:     #e8eaf0;
+    --txt2:    #7c849a;
+    --txt3:    #4a5270;
+    --radius:  10px;
+    --mono:    'DM Mono', ui-monospace, monospace;
+    --sans:    'DM Sans', system-ui, sans-serif;
+    --serif:   'DM Serif Display', Georgia, serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt); font-family: var(--sans); font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button, input, select, textarea { font-family: var(--sans); font-size: 13px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 28px;
+           border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--green), var(--accent));
+               display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .logo-name { font-family: var(--serif); font-size: 19px; }
+  .hdr-right { display: flex; align-items: center; gap: 10px; }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+          background: var(--card); color: var(--txt2); display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--txt3); }
+  .dot.ok { background: var(--green); box-shadow: 0 0 6px #34d39960; }
+  .dot.bad { background: var(--red); }
+
+  nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--border); background: var(--surface); overflow-x: auto; }
+  nav button { background: none; border: none; color: var(--txt2); padding: 12px 14px; cursor: pointer; border-bottom: 2px solid transparent;
+               font-weight: 500; white-space: nowrap; }
+  nav button.on { color: var(--txt); border-bottom-color: var(--accent); }
+  nav .badge { font-family: var(--mono); font-size: 10px; background: var(--amber); color: #000; border-radius: 10px; padding: 1px 6px; margin-left: 4px; }
+  nav .badge:empty { display: none; }
+
+  main { padding: 24px 28px 60px; max-width: 1400px; margin: 0 auto; }
+  .view { display: none; }
+  .view.on { display: block; }
+  h2 { font-family: var(--serif); font-weight: 400; font-size: 24px; margin-bottom: 4px; }
+  h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .sub { color: var(--txt2); font-size: 13px; margin-bottom: 18px; line-height: 1.5; }
+  .label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--txt3); margin-bottom: 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+  .muted { color: var(--txt2); }
+  .faint { color: var(--txt3); }
+  .mono { font-family: var(--mono); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 7px 13px; cursor: pointer; font-weight: 500; }
+  .btn:hover { filter: brightness(1.1); }
+  .btn-sec { background: var(--surface); color: var(--txt); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .btn-sec:hover { border-color: var(--accent); }
+  .btn-sm { padding: 4px 9px; font-size: 12px; }
+  .btn-danger { color: var(--red); }
+  input[type=text], input[type=email], input[type=url], select, textarea {
+    background: var(--surface); color: var(--txt); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+
+  /* overview */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .stat-n { font-family: var(--serif); font-size: 30px; }
+  .stat-l { color: var(--txt2); font-size: 12px; margin-top: 2px; }
+  .pipe { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--surface); margin: 8px 0 10px; }
+  .pipe div { height: 100%; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--txt2); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--txt3);
+       padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 400; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .bar { height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; min-width: 60px; }
+  .bar div { height: 100%; background: var(--green); }
+  .todo { display: flex; gap: 10px; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .todo:last-child { border-bottom: none; }
+  .todo .ic { width: 22px; text-align: center; }
+
+  /* companies */
+  .split { display: grid; grid-template-columns: 330px 1fr; gap: 18px; align-items: start; }
+  .tlist { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; position: sticky; top: 12px;
+           max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+  .tlist .filter { padding: 10px; border-bottom: 1px solid var(--border); }
+  .tlist .items { overflow-y: auto; }
+  .titem { padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .titem:hover { background: #ffffff06; }
+  .titem.on { background: #4f9cf914; border-left: 3px solid var(--accent); padding-left: 11px; }
+  .titem .co { font-weight: 600; }
+  .titem .meta { font-size: 12px; color: var(--txt2); margin-top: 3px; }
+  .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface);
+          color: var(--txt2); margin: 2px 4px 2px 0; white-space: nowrap; }
+  .chip.loc { border-color: #34d39950; color: var(--green); }
+  .chip.school { border-color: #4f9cf950; color: var(--accent); }
+  .chip.job { border-color: #a78bfa50; color: var(--accent2); }
+  .chip.warn { border-color: #fbbf2450; color: var(--amber); }
+  .sgroup { margin-bottom: 14px; }
+  .sgroup:last-child { margin-bottom: 0; }
+  .srow { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .srow:last-child { border-bottom: none; }
+  .srow .why { font-size: 12px; color: var(--txt3); }
+  .dtabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .dtabs button { background: var(--surface); border: 1px solid var(--border); color: var(--txt2); border-radius: 16px; padding: 4px 11px; cursor: pointer; font-size: 12px; }
+  .dtabs button.on { color: var(--txt); border-color: var(--accent); }
+  .draft { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; line-height: 1.55;
+           font-size: 13px; margin-bottom: 8px; }
+  .count { font-family: var(--mono); font-size: 11px; color: var(--txt3); }
+  .count.over { color: var(--red); }
+  .form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .form .full { grid-column: 1 / -1; }
+
+  /* contacts */
+  .person { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .person:last-child { border-bottom: none; }
+  .person .name { font-weight: 600; }
+  .person .hl { font-size: 12px; color: var(--txt2); margin-top: 2px; }
+  .person .extra { margin-top: 10px; padding: 12px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border); }
+  .score { font-family: var(--mono); font-size: 11px; color: var(--txt2); }
+  .st { font-size: 12px; padding: 4px 8px; width: auto; }
+  .due { color: var(--amber); font-size: 12px; }
+  .hist { font-size: 12px; color: var(--txt3); margin-top: 6px; }
+  .empty { color: var(--txt2); padding: 18px 0; text-align: center; font-size: 13px; }
+
+  /* ties */
+  .tie { display: grid; grid-template-columns: 26px 1fr 110px 200px 60px 30px; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .tie:last-child { border-bottom: none; }
+  .tie.off { opacity: .45; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--card); border: 1px solid var(--border);
+           padding: 9px 16px; border-radius: 20px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
+  #toast.on { opacity: 1; }
+  .note-box { border-left: 3px solid var(--amber); }
+
+  @media (max-width: 900px) {
+    .split, .two { grid-template-columns: 1fr; }
+    .tlist { position: static; max-height: 360px; }
+    header, nav, main { padding-left: 16px; padding-right: 16px; }
+    .tie { grid-template-columns: 26px 1fr 80px; }
+    .tie .wt, .tie .wv { grid-column: 2 / -1; }
+    .form { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🤝</div>
+    <div><span class="logo-name">Tailor Network</span></div>
+  </div>
+  <div class="hdr-right">
+    <a class="pill" href="/desk">✂ Desk</a>
+    <span class="pill" id="srv"><span class="dot" id="srvDot"></span><span id="srvLabel">Checking server…</span></span>
+  </div>
+</header>
+
+<nav id="nav">
+  <button data-view="overview">Overview</button>
+  <button data-view="companies">Companies</button>
+  <button data-view="contacts">People</button>
+  <button data-view="followups">Follow-ups<span class="badge" id="dueBadge"></span></button>
+  <button data-view="ties">Your ties</button>
+</nav>
+
+<main>
+  <!-- OVERVIEW -->
+  <section class="view" id="v-overview">
+    <h2>Referral outreach</h2>
+    <p class="sub">People to ask for a referral at the companies you apply to, ranked by location first, then school, then past
+      employers. Tailor gives you searches and drafts; you open the searches, pick people and send the messages yourself.</p>
+    <div class="stats" id="ovStats"></div>
+    <div class="card" id="ovAuto"></div>
+    <div class="card" id="ovConn"></div>
+    <div class="card">
+      <div class="label">Pipeline</div>
+      <div class="pipe" id="ovPipe"></div>
+      <div class="legend" id="ovLegend"></div>
+    </div>
+    <div class="two">
+      <div class="card">
+        <div class="label">Today</div>
+        <div id="ovTodo"></div>
+      </div>
+      <div class="card">
+        <div class="label">Which ties answer</div>
+        <div id="ovRel"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPANIES -->
+  <section class="view" id="v-companies">
+    <div class="split">
+      <div class="tlist">
+        <div class="filter"><input type="text" id="tFilter" placeholder="Filter companies…" /></div>
+        <div class="items" id="tItems"></div>
+      </div>
+      <div id="tDetail"><div class="empty">Pick a company.</div></div>
+    </div>
+  </section>
+
+  <!-- PEOPLE -->
+  <section class="view" id="v-contacts">
+    <div class="row" style="margin-bottom:14px">
+      <div class="grow"><h2>People</h2></div>
+      <button class="btn-sec" id="btnCsv">⬇ Export CSV</button>
+    </div>
+    <div class="row" style="margin-bottom:14px">
+      <input type="text" id="cSearch" placeholder="Search name, company, headline…" style="max-width:320px" />
+      <select id="cStatus" style="max-width:180px"><option value="">Any status</option></select>
+      <select id="cCompany" style="max-width:220px"><option value="">Any company</option></select>
+      <select id="cRel" style="max-width:170px">
+        <option value="">Any tie</option><option value="alum">Alumni</option><option value="coworker">Past coworkers</option>
+        <option value="recruiter">Recruiters</option><option value="local">Same city / other</option>
+      </select>
+    </div>
+    <div class="card" id="cList"></div>
+  </section>
+
+  <!-- FOLLOW-UPS -->
+  <section class="view" id="v-followups">
+    <h2>Follow-ups</h2>
+    <p class="sub">A short nudge 5 days after a message that got no answer. After one or two nudges, mark them "no reply" and move on.</p>
+    <div class="card"><div class="label">Due now</div><div id="fDue"></div></div>
+    <div class="card"><div class="label">Coming up</div><div id="fSoon"></div></div>
+  </section>
+
+  <!-- TIES -->
+  <section class="view" id="v-ties">
+    <h2>Your ties</h2>
+    <p class="sub">What links you to people: schools, programs, clubs and past employers. The weight decides the order of searches
+      and how high a saved person ranks (a shared city always adds the most). Switch a tie off to leave it out.</p>
+    <div class="card" id="tieList"></div>
+    <div class="card">
+      <div class="label">Add a tie</div>
+      <div class="form">
+        <input type="text" id="ntLabel" placeholder="Name as a message says it (e.g. Asian American Business Association)" class="full" />
+        <select id="ntKind"></select>
+        <input type="text" id="ntSearch" placeholder="Search words (e.g. &quot;Women in Business&quot; club)" />
+        <input type="text" id="ntWords" placeholder="Words that show it on a profile, comma separated" class="full" />
+        <div class="row full"><span class="muted" style="font-size:12px">Weight</span>
+          <input type="range" id="ntWeight" min="0.1" max="3" step="0.1" value="1.5" style="max-width:220px" />
+          <span class="mono" id="ntWeightV">1.5</span>
+          <div class="grow"></div>
+          <button class="btn-sec" id="btnAddTie">＋ Add</button></div>
+      </div>
+    </div>
+    <div class="row"><button class="btn" id="btnSaveTies">Save ties</button><span class="muted" id="tiesSaved" style="font-size:12px"></span></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const TOKEN = document.querySelector('meta[name="tailor-token"]').content;
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "X-Tailor-Token": TOKEN }, opts.body ? { "Content-Type": "application/json" } : {});
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (!res.ok) {
+    let msg = "HTTP " + res.status;
+    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return res;
+}
+const getJSON = async (p, o) => (await api(p, o)).json();
+const send = (p, method, body) => getJSON(p, { method, body: JSON.stringify(body) });
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = id => document.getElementById(id);
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 1800); }
+async function copyText(text, what) {
+  try { await navigator.clipboard.writeText(text); toast((what || "Copied") + " ✓"); }
+  catch (_) { toast("Copy failed: select the text instead"); }
+}
+function safeUrl(u) { return /^https?:\/\//i.test(u || "") ? u : ""; }
+const STATUS_COLOR = { "to contact": "var(--txt3)", "messaged": "var(--accent)", "replied": "var(--accent2)", "referred": "var(--green)",
+                       "no reply": "#6b7280", "not a fit": "var(--red)" };
+const REL_NAME = { alum: "Alumni", coworker: "Past coworkers", local: "Same city / other", recruiter: "Recruiters" };
+let STATUSES = ["to contact", "messaged", "replied", "referred", "no reply", "not a fit"];
+let contacts = [];
+let targets = [];
+let currentKey = null;
+
+let tieKind = {};  // tie label -> kind, to color the chips
+function chipFor(t) {
+  if (/^same city/.test(t)) return `<span class="chip loc">📍 ${esc(t.replace(/^same city as the role \((.*)\)$/, "$1"))}</span>`;
+  if (/^near you/.test(t)) return `<span class="chip loc">🏠 ${esc(t.replace(/^near you \((.*)\)$/, "$1"))}</span>`;
+  if (t === "recruiter") return `<span class="chip warn">recruiter</span>`;
+  return `<span class="chip ${tieKind[t] === "employer" ? "job" : "school"}">${esc(t)}</span>`;
+}
+function ago(iso) {
+  if (!iso) return "";
+  const d = Math.round((Date.now() - new Date(iso.slice(0, 10) + "T12:00:00")) / 864e5);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : d + " days ago";
+}
+
+// ── server status ──
+async function health() {
+  try { await (await fetch("/api/health")).json(); $("srvDot").className = "dot ok"; $("srvLabel").textContent = "Server ready"; }
+  catch (_) { $("srvDot").className = "dot bad"; $("srvLabel").textContent = "Server offline"; }
+}
+
+// ── routing ──
+function show(view, arg) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.view === view));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "v-" + view));
+  if (view === "overview") loadOverview();
+  if (view === "companies") loadTargets(arg);
+  if (view === "contacts") loadContacts();
+  if (view === "followups") loadFollowUps();
+  if (view === "ties") loadTies();
+}
+function route() {
+  const [view, arg] = decodeURIComponent(location.hash.slice(1)).split("/");
+  show(["overview", "companies", "contacts", "followups", "ties"].includes(view) ? view : "overview", arg);
+}
+$("nav").addEventListener("click", e => { const b = e.target.closest("button"); if (b) location.hash = b.dataset.view; });
+window.addEventListener("hashchange", route);
+
+// ── overview ──
+async function loadOverview() {
+  drawConnections();
+  drawAutopilot();
+  const [s, t, c] = await Promise.all([getJSON("/api/network/stats"), getJSON("/api/network/targets"), getJSON("/api/network/contacts")]);
+  targets = t.targets; contacts = c.contacts; STATUSES = c.statuses;
+  $("dueBadge").textContent = s.due || "";
+  const bs = s.by_status, messaged = (bs.messaged || 0) + (bs.replied || 0) + (bs.referred || 0) + (bs["no reply"] || 0);
+  const answered = (bs.replied || 0) + (bs.referred || 0);
+  const companies = targets.filter(x => x.active > 0).length;
+  $("ovStats").innerHTML = [
+    [companies, "Companies you're applying to", "var(--txt)"],
+    [s.total, "People saved", "var(--accent)"],
+    [messaged, "Messaged", "var(--accent2)"],
+    [messaged ? Math.round(100 * answered / messaged) + "%" : "–", "Reply rate", "var(--txt)"],
+    [bs.referred || 0, "Referrals", "var(--green)"],
+    [s.due || 0, "Follow-ups due", "var(--amber)"],
+  ].map(([n, l, col]) => `<div class="stat"><div class="stat-n" style="color:${col}">${esc(n)}</div><div class="stat-l">${esc(l)}</div></div>`).join("");
+  const total = s.total || 1;
+  $("ovPipe").innerHTML = STATUSES.map(st => bs[st] ? `<div title="${esc(st)}: ${bs[st]}" style="width:${100 * bs[st] / total}%;background:${STATUS_COLOR[st]}"></div>` : "").join("");
+  $("ovLegend").innerHTML = STATUSES.map(st => `<span><i style="background:${STATUS_COLOR[st]}"></i>${esc(st)} · ${bs[st] || 0}</span>`).join("");
+
+  const rel = s.by_relation, rows = Object.keys(rel);
+  $("ovRel").innerHTML = rows.length ? `<table><tr><th>Tie</th><th>Saved</th><th>Messaged</th><th>Answered</th><th>Rate</th></tr>` +
+    rows.map(r => { const g = rel[r]; return `<tr><td>${esc(REL_NAME[r] || r)}</td><td>${g.saved}</td><td>${g.messaged}</td><td>${g.answered}${g.referred ? ` <span class="faint">(${g.referred} ref)</span>` : ""}</td>
+      <td>${g.reply_rate == null ? '<span class="faint">–</span>' : `<div class="row"><div class="bar grow"><div style="width:${g.reply_rate}%"></div></div><span class="mono" style="font-size:11px">${g.reply_rate}%</span></div>`}</td></tr>`; }).join("") + `</table>`
+    : `<div class="empty">Once you message people, this shows whether alumni, past coworkers or locals answer more.</div>`;
+
+  const todo = [];
+  contacts.filter(x => x.follow_up_due).slice(0, 5).forEach(x => todo.push(["⏰", `Follow up with <b>${esc(x.name || x.email)}</b> at ${esc(x.company)} <span class="faint">(messaged ${ago(x.contacted_at)})</span>`, "#followups"]));
+  contacts.filter(x => x.status === "to contact").slice(0, 5).forEach(x => todo.push(["✉️", `Message <b>${esc(x.name || x.email)}</b> at ${esc(x.company)} ${x.ties.slice(0, 2).map(chipFor).join("")}`, "#contacts"]));
+  targets.filter(x => x.connections > 0 && x.contacts === 0).slice(0, 5).forEach(x => todo.push(["🤝", `You know <b>${x.connections}</b> ${x.connections > 1 ? "people" : "person"} at <b>${esc(x.company)}</b>: ask for a referral`, "#companies/" + encodeURIComponent(x.key)]));
+  targets.filter(x => x.active > 0 && x.contacts === 0 && !x.connections).slice(0, 6).forEach(x => todo.push(["🔎", `Find people at <b>${esc(x.company)}</b>${x.focus[0] ? ` in ${esc(x.focus[0])}` : ""}${x.days_left != null && x.days_left <= 14 ? ` <span class="chip warn">⏳ ${x.days_left}d left</span>` : ""}${x.in_your_area ? ' <span class="chip loc">your area</span>' : ""}`, "#companies/" + encodeURIComponent(x.key)]));
+  $("ovTodo").innerHTML = todo.length ? todo.map(([ic, html, href]) => `<a class="todo" href="${href}" style="color:inherit;text-decoration:none"><span class="ic">${ic}</span><span class="grow">${html}</span><span class="faint">›</span></a>`).join("")
+    : `<div class="empty">Nothing waiting. Add postings on the Desk to get companies here.</div>`;
+}
+
+// ── companies ──
+async function loadTargets(key) {
+  const t = await getJSON("/api/network/targets");
+  targets = t.targets;
+  drawTargetList();
+  const pick = key ? decodeURIComponent(key) : (currentKey && targets.some(x => x.key === currentKey) ? currentKey : targets[0]?.key);
+  if (pick) openTarget(pick);
+}
+function drawTargetList() {
+  const f = $("tFilter").value.trim().toLowerCase();
+  const items = targets.filter(x => !f || x.company.toLowerCase().includes(f));
+  $("tItems").innerHTML = items.length ? items.map(x => `
+    <div class="titem${x.key === currentKey ? " on" : ""}" data-key="${esc(x.key)}">
+      <div class="row"><span class="co grow">${esc(x.company)}</span>${x.connections ? `<span class="chip loc" title="1st-degree connections">🤝 ${x.connections}</span>` : ""}${x.contacts ? `<span class="chip">${x.contacts} 👤</span>` : ""}</div>
+      <div class="meta">${x.focus.length ? "📍 " + esc(x.focus.slice(0, 3).join(" · ")) : '<span class="faint">no city found</span>'}${x.in_your_area ? ' <span class="chip loc">your area</span>' : ""}</div>
+      <div class="meta">${x.days_left != null ? `<span class="chip ${x.days_left <= 7 ? "warn" : ""}">⏳ ${x.days_left === 0 ? "due today" : x.days_left + "d left"}</span>` : ""}${x.active ? `${x.active} open application${x.active > 1 ? "s" : ""}` : x.prospects ? `<span class="chip school">prospect</span> ${x.prospects} role${x.prospects > 1 ? "s" : ""} in Find roles` : `<span class="faint">${x.postings.length} posting${x.postings.length > 1 ? "s" : ""}, none open</span>`}</div>
+    </div>`).join("") : `<div class="empty">No companies yet.</div>`;
+}
+$("tFilter").addEventListener("input", drawTargetList);
+$("tItems").addEventListener("click", e => { const it = e.target.closest(".titem"); if (it) location.hash = "companies/" + encodeURIComponent(it.dataset.key); });
+
+async function openTarget(key) {
+  currentKey = key;
+  drawTargetList();
+  $("tDetail").innerHTML = `<div class="empty">Loading…</div>`;
+  let d;
+  try { d = await getJSON("/api/network/target/" + encodeURIComponent(key)); }
+  catch (e) { $("tDetail").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const groups = {};
+  d.searches.forEach(s => (groups[s.group] = groups[s.group] || []).push(s));
+  const recruiters = d.posting_contacts;
+  $("tDetail").innerHTML = `
+    <div class="card">
+      <h2>${esc(d.company)}</h2>
+      <div class="row" style="margin:6px 0 10px">${d.focus.map((p, i) => `<span class="chip ${i === 0 ? "loc" : ""}">📍 ${esc(p)}</span>`).join("")}${d.focus_fallback ? '<span class="chip warn" title="The postings name no office city">no city in the posting: using your cities</span>' : ""}</div>
+      <div class="label" style="margin-top:6px">Your postings here</div>
+      ${d.postings.map(p => `<div class="row" style="padding:3px 0"><span class="grow">${esc(p.title || "Untitled")}</span><span class="chip">${esc(p.stage)}</span>${p.deadline ? `<span class="chip warn">due ${esc(p.deadline)}</span>` : ""}${safeUrl(p.url) ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}</div>`).join("")}
+    </div>
+
+    ${d.connection_list && d.connection_list.length ? `<div class="card note-box">
+      <h3>🤝 People you already know here (${d.connection_list.length})</h3>
+      <p class="sub" style="margin-bottom:8px">From your LinkedIn export. Ask them first: a referral from someone who knows you counts most.</p>
+      ${d.connection_list.map((c, i) => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--border)">
+        <span class="grow"><b>${safeUrl(c.link) ? `<a href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.name)}</a>` : esc(c.name)}</b>
+        <span class="muted"> · ${esc(c.position)}</span> <span class="faint" style="font-size:12px">connected ${esc(c.connected_on)}</span></span>
+        ${c.saved ? '<span class="chip">saved</span>' : `<button class="btn btn-sm" data-conn="${i}">＋ Save &amp; draft</button>`}</div>`).join("")}
+    </div>` : ""}
+
+    <div class="card">
+      <h3>🎁 Referral packet</h3>
+      <p class="sub" style="margin-bottom:8px">What a referrer pastes into their company's referral form. Send it once they say yes.</p>
+      <div id="pk"><div class="faint">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h3>1 · Find people</h3>
+      <p class="sub" style="margin-bottom:12px">Open a search, look for someone who shares a tie with you, then save them below. Best matches first.</p>
+      ${Object.entries(groups).map(([g, ss]) => `<div class="sgroup"><div class="label">${esc(g)}</div>
+        ${ss.map(s => `<div class="srow"><a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener">${esc(s.label)} ↗</a><span class="why grow">${esc(s.why)}</span></div>`).join("")}</div>`).join("")}
+    </div>
+
+    <div class="card">
+      <h3>⚡ Paste a page of results</h3>
+      <p class="sub" style="margin-bottom:10px">On one of the Google searches above, press ⌘A then ⌘C, and paste here (⌘V). Tailor lists the
+        people with what you share, best first. Tick the ones worth asking and save them together.</p>
+      <textarea id="rPaste" placeholder="Paste the whole results page here…" style="min-height:54px"></textarea>
+      <div id="rOut"></div>
+    </div>
+
+    ${recruiters.length ? `<div class="card"><h3>Named on the posting</h3>
+      ${recruiters.map(r => `<div class="row" style="padding:4px 0"><span class="grow"><b>${esc(r.name || "Recruiting inbox")}</b> ${r.title ? `<span class="muted">· ${esc(r.title)}</span>` : ""}
+        ${r.email ? `<span class="mono" style="font-size:12px"> · ${esc(r.email)}</span>` : ""}</span>
+        ${r.email ? `<button class="btn-sec btn-sm" data-copy="${esc(r.email)}">Copy email</button>` : ""}
+        <button class="btn-sec btn-sm" data-save-rec='${esc(JSON.stringify({ name: r.name, headline: r.title, email: r.email }))}'>＋ Save</button></div>`).join("")}</div>` : ""}
+
+    <div class="card">
+      <h3>2 · Message drafts</h3>
+      <div class="dtabs" id="dTabs">${d.drafts.map((x, i) => `<button data-i="${i}" class="${i ? "" : "on"}">${esc(x.label)}</button>`).join("")}</div>
+      <div id="dBody"></div>
+    </div>
+
+    <div class="card">
+      <h3>3 · People you saved (${d.people.length})</h3>
+      <div id="tPeople">${d.people.length ? d.people.map(personRow).join("") : `<div class="empty">No one saved for ${esc(d.company)} yet.</div>`}</div>
+    </div>
+
+    <div class="card">
+      <h3>＋ Save a person</h3>
+      <p class="sub" style="margin-bottom:10px">Paste the top of their profile (name, headline, location) and Tailor splits it up. Nothing is fetched from the site.</p>
+      <textarea id="aPaste" placeholder="Paste here…" style="min-height:60px;margin-bottom:8px"></textarea>
+      <div class="form">
+        <input type="text" id="aName" placeholder="Name" />
+        <input type="text" id="aLoc" placeholder="Location (e.g. San Francisco Bay Area)" />
+        <input type="text" id="aHead" placeholder="Headline (e.g. Product Manager at ${esc(d.company)} | State University MBA)" class="full" />
+        <input type="url" id="aLink" placeholder="Profile link" />
+        <input type="email" id="aEmail" placeholder="Email (if you have it)" />
+        <textarea id="aNotes" placeholder="Notes (how you found them, what you have in common)" class="full" style="min-height:44px"></textarea>
+        <div class="row full"><div class="grow"></div><button class="btn" id="btnAdd">Save person</button></div>
+      </div>
+    </div>`;
+
+  const drawDraft = i => {
+    const x = d.drafts[i];
+    $("dBody").innerHTML = `
+      <div class="row"><span class="label grow" style="margin:0">Connection note</span><span class="count${x.note.length > 300 ? " over" : ""}">${x.note.length}/300</span>
+        <button class="btn-sec btn-sm" data-copy-draft="note">Copy</button></div>
+      <div class="draft">${esc(x.note)}</div>
+      <div class="row"><span class="label grow" style="margin:0">Longer message / email</span><button class="btn-sec btn-sm" data-copy-draft="message">Copy</button></div>
+      <div class="draft">${esc(x.message)}</div>
+      <div class="faint" style="font-size:12px">{first_name} is filled in when you copy the draft from a saved person.</div>`;
+    $("dBody").querySelectorAll("[data-copy-draft]").forEach(b => b.onclick = () => copyText(x[b.dataset.copyDraft], "Draft copied"));
+  };
+  if (d.drafts.length) drawDraft(0);
+  $("dTabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return;
+    $("dTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); drawDraft(+b.dataset.i); });
+
+  $("tDetail").querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(b.dataset.copy, "Email copied"));
+  $("tDetail").querySelectorAll("[data-save-rec]").forEach(b => b.onclick = async () => {
+    const r = JSON.parse(b.dataset.saveRec);
+    await addPerson({ company: d.company, posting_id: d.postings[0]?.id || "", name: r.name || "", headline: r.headline || "", email: r.email || "", notes: "Named on the posting" });
+  });
+  wireResults(d);
+  wireKnown(d);
+  loadPacket(d);
+  let parseTimer;
+  $("aPaste").addEventListener("input", () => { clearTimeout(parseTimer); parseTimer = setTimeout(async () => {
+    const txt = $("aPaste").value.trim(); if (!txt) return;
+    const p = await send("/api/network/parse", "POST", { text: txt });
+    if (p.name) $("aName").value = p.name; if (p.headline) $("aHead").value = p.headline; if (p.location) $("aLoc").value = p.location;
+    const link = (txt.match(/https?:\/\/\S+/) || [])[0]; if (link && !$("aLink").value) $("aLink").value = link;
+  }, 350); });
+  $("btnAdd").onclick = () => addPerson({ company: d.company, posting_id: (d.postings.find(p => ["saved", "applying"].includes(p.stage)) || d.postings[0] || {}).id || "",
+    name: $("aName").value, headline: $("aHead").value, location: $("aLoc").value, link: $("aLink").value, email: $("aEmail").value, notes: $("aNotes").value });
+  wirePeople($("tPeople"));
+}
+// ── people the person already knows, and the referral packet ──
+function wireKnown(d) {
+  $("tDetail").querySelectorAll("[data-conn]").forEach(b => b.onclick = async () => {
+    const c = d.connection_list[+b.dataset.conn];
+    const live = d.postings.find(p => ["saved", "applying"].includes(p.stage));
+    await addPerson({ company: d.company, posting_id: live ? live.id : "", name: c.name, headline: c.position, link: c.link,
+                      email: c.email || "", connection: true, notes: "1st-degree connection (connected " + c.connected_on + ")" });
+  });
+}
+async function loadPacket(d, pid) {
+  const box = $("pk");
+  let pk;
+  try { pk = await getJSON(`/api/network/packet/${encodeURIComponent(d.key)}${pid ? "?pid=" + encodeURIComponent(pid) : ""}`); }
+  catch (e) { box.innerHTML = `<div class="faint">${esc(e.message)}</div>`; return; }
+  const text = [`${pk.title} at ${pk.company}`, pk.ref ? `Job ID: ${pk.ref}` : "", pk.url, "", pk.blurb].filter((x, i) => x || i === 3).join("\n");
+  box.innerHTML = `
+    ${pk.postings.length > 1 ? `<select id="pkPick" style="max-width:420px;margin-bottom:8px">${pk.postings.map(p => `<option value="${esc(p.id)}"${p.title === pk.title ? " selected" : ""}>${esc(p.title)} (${esc(p.stage)})</option>`).join("")}</select>` : ""}
+    <div class="draft">${esc(text)}</div>
+    <div class="row"><button class="btn-sec btn-sm" id="pkCopy">Copy packet</button>
+      ${pk.resume_url ? `<button class="btn-sec btn-sm" id="pkResume">⬇ Tailored resume (PDF)</button>` : `<span class="faint" style="font-size:12px">Tailor this posting on the Desk to attach its resume.</span>`}
+      ${pk.ref ? "" : `<span class="faint" style="font-size:12px">No job ID found: the referrer can use the link.</span>`}</div>`;
+  $("pkCopy").onclick = () => copyText(text, "Packet copied");
+  if ($("pkPick")) $("pkPick").onchange = e => loadPacket(d, e.target.value);
+  if ($("pkResume")) $("pkResume").onclick = async () => {
+    const blob = await (await api(pk.resume_url)).blob();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Resume.pdf"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+}
+
+// ── autopilot: the day's referral work, prepared every morning ──
+async function drawAutopilot() {
+  let a;
+  try { a = await getJSON("/api/network/autopilot"); } catch (_) { return; }
+  const st = a.settings, d = a.digest;
+  const item = (ic, html, href) => `<a class="todo" href="${href}" style="color:inherit;text-decoration:none"><span class="ic">${ic}</span><span class="grow">${html}</span><span class="faint">›</span></a>`;
+  const rows = d ? [
+    ...d.warm.map(w => item("🤝", `Ask <b>${esc(w.name)}</b> at ${esc(w.company)} (you're connected): draft ready`, "#companies/" + encodeURIComponent(w.key))),
+    ...d.recruiters.map(r => item("📨", `Introduce yourself to <b>${esc(r.name)}</b>, the recruiter at ${esc(r.company)} (you applied)`, "#contacts")),
+    ...d.follow_ups.map(f => item("⏰", `Follow up with <b>${esc(f.name)}</b> at ${esc(f.company)}`, "#followups")),
+    ...d.urgent.map(u => `<div class="todo"><span class="ic">⏳</span><span class="grow"><b>${esc(u.company)}</b> closes in ${u.days_left} day${u.days_left === 1 ? "" : "s"} and you have nobody to ask${u.search && safeUrl(u.search.url) ? `: <a href="${esc(u.search.url)}" target="_blank" rel="noopener">${esc(u.search.label)} ↗</a>` : ""}</span><a class="faint" href="#companies/${encodeURIComponent(u.key)}">›</a></div>`),
+  ] : [];
+  $("ovAuto").innerHTML = `
+    <div class="row"><div class="label grow" style="margin:0">🛫 Autopilot · today's referral plan</div>
+      <label class="row" style="gap:5px;font-size:12px"><input type="checkbox" id="apOn" ${st.enabled ? "checked" : ""}/> every morning at</label>
+      <select id="apHour" class="st">${Array.from({ length: 24 }, (_, h) => `<option value="${h}"${h === st.hour ? " selected" : ""}>${(h % 12) || 12}${h < 12 ? "am" : "pm"}</option>`).join("")}</select>
+      <label class="row" style="gap:5px;font-size:12px"><input type="checkbox" id="apNotify" ${st.notify ? "checked" : ""}/> Mac notification</label>
+      <button class="btn btn-sm" id="apRun">Run now</button></div>
+    <p class="sub" style="margin:8px 0 6px">Each morning Tailor lines up people you already know at your companies (up to ${st.max_new} a day), the recruiters on postings you applied to, follow-ups that are due, and deadlines with nobody to ask. It never sends anything: you send every message.</p>
+    ${d ? `<div class="faint" style="font-size:12px;margin-bottom:4px">Last plan ${esc(d.at.replace("T", " ").slice(0, 16))} · ${d.to_contact} people waiting to be contacted</div>${rows.join("") || '<div class="empty">Nothing new today.</div>'}` : '<div class="empty">No plan yet. Click Run now.</div>'}`;
+  const save = () => send("/api/network/autopilot", "PUT", { enabled: $("apOn").checked, hour: +$("apHour").value, max_new: st.max_new, notify: $("apNotify").checked }).then(() => toast("Autopilot saved"));
+  ["apOn", "apHour", "apNotify"].forEach(id => $(id).onchange = save);
+  $("apRun").onclick = async () => { $("apRun").disabled = true; $("apRun").textContent = "Planning…"; try { await send("/api/network/autopilot/run", "POST", {}); toast("Plan ready"); loadOverview(); } finally { $("apRun").disabled = false; } };
+}
+
+// ── the person's LinkedIn connections (their own export) ──
+async function drawConnections() {
+  let c;
+  try { c = await getJSON("/api/network/connections"); } catch (_) { return; }
+  const box = $("ovConn");
+  box.innerHTML = `<div class="row"><div class="label grow" style="margin:0">🤝 People you already know</div>
+      ${c.total ? `<span class="faint" style="font-size:12px">${c.total} connections · imported ${esc((c.imported_at || "").slice(0, 10))}</span>
+      <button class="btn-sec btn-sm" id="connForget">Forget</button>` : ""}
+      <label class="btn-sec btn-sm" style="cursor:pointer">⬆ ${c.total ? "Re-import" : "Import"} Connections.csv<input type="file" id="connFile" accept=".csv,text/csv" hidden /></label></div>
+    ${c.total ? (c.warm.length ? `<div style="margin-top:10px">${c.warm.slice(0, 12).map(w => `<a class="chip loc" href="#companies/${encodeURIComponent(w.key)}" title="${esc(w.names.join(", "))}">${esc(w.company)} · ${w.count}</a>`).join("")}</div>`
+      : `<div class="faint" style="margin-top:8px">None of your connections work at the companies on your list yet.</div>`)
+      : `<p class="sub" style="margin:8px 0 0">The strongest referrals come from people who know you. On LinkedIn: <b>Settings → Data privacy → Get a copy of your data → Connections</b>. LinkedIn emails you a file in about 10 minutes; import <b>Connections.csv</b> here and Tailor shows who you know at each company. The file stays on this Mac.</p>`}`;
+  $("connFile").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { const r = await send("/api/network/connections", "POST", { text: await f.text() });
+          toast(`Imported ${r.total} · ${r.warm.length} companies where you know someone`); drawConnections(); loadTargetsQuiet(); }
+    catch (err) { toast(err.message); }
+  };
+  if ($("connForget")) $("connForget").onclick = async () => { await api("/api/network/connections", { method: "DELETE" }); toast("Connections removed"); drawConnections(); };
+}
+
+// ── a pasted page of search results ──
+function linksFromHtml(html) {
+  // the pasted page's own anchors: profile links and their titles (parsed, never put on this page)
+  if (!html) return [];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll("a[href]")].map(a => ({ url: a.getAttribute("href"), text: (a.querySelector("h3") || a).textContent.trim() }))
+    .filter(x => /linkedin\.com(?:%2F|\/)in(?:%2F|\/)/i.test(x.url) && x.text).slice(0, 200);
+}
+function wireResults(d) {
+  const box = $("rPaste"), out = $("rOut");
+  let links = [], people = [];
+  box.addEventListener("paste", e => { links = linksFromHtml(e.clipboardData.getData("text/html")); });
+  let t;
+  box.addEventListener("input", () => { clearTimeout(t); t = setTimeout(run, 300); });
+  async function run() {
+    const text = box.value.trim();
+    if (!text) { out.innerHTML = ""; return; }
+    const r = await send("/api/network/results", "POST", { text, links, key: d.key });
+    people = r.people;
+    if (!people.length) { out.innerHTML = `<div class="empty">No profiles found in that text. Paste a Google results page for one of the searches above.</div>`; return; }
+    const fresh = people.filter(p => !p.saved).length;
+    out.innerHTML = `
+      <div class="row" style="margin:12px 0 4px"><span class="grow muted" style="font-size:12px">${people.length} found · ${fresh} new · ${people.filter(p => p.link).length} with a profile link</span>
+        <button class="btn-sec btn-sm" id="rAll">Tick all new</button><button class="btn btn-sm" id="rSave">Save selected</button></div>
+      <table><tr><th></th><th>Person</th><th>Where</th><th>What you share</th><th>Score</th></tr>
+      ${people.map((p, i) => `<tr>
+        <td><input type="checkbox" data-i="${i}" ${p.saved ? "disabled" : ""} ${!p.saved && p.at_company && p.score >= 2 ? "checked" : ""} /></td>
+        <td><b>${safeUrl(p.link) ? `<a href="${esc(p.link)}" target="_blank" rel="noopener">${esc(p.name)}</a>` : esc(p.name)}</b>
+          ${p.saved ? '<span class="chip">saved</span>' : ""}${p.at_company ? "" : '<span class="chip warn" title="The result does not name the company: they may have left">check company</span>'}
+          <div class="hl" style="font-size:12px;color:var(--txt2)">${esc(p.headline)}${p.role && p.role !== p.headline ? ` <span class="faint">· ${esc(p.role)}</span>` : ""}</div></td>
+        <td style="font-size:12px">${esc(p.location) || '<span class="faint">?</span>'}</td>
+        <td>${p.ties.map(chipFor).join("") || '<span class="faint" style="font-size:12px">none found</span>'}</td>
+        <td class="score">${Number(p.score).toFixed(1)}</td></tr>`).join("")}</table>`;
+    $("rAll").onclick = () => out.querySelectorAll("input[data-i]:not(:disabled)").forEach(c => c.checked = true);
+    $("rSave").onclick = async () => {
+      const pick = [...out.querySelectorAll("input[data-i]:checked")].map(c => people[+c.dataset.i])
+        .map(p => ({ name: p.name, headline: p.headline, location: p.location, link: p.link, role: p.role, education: p.education, snippet: p.snippet }));
+      if (!pick.length) { toast("Tick someone first"); return; }
+      const r = await send("/api/network/contacts/bulk", "POST", { key: d.key, people: pick });
+      toast(`Saved ${r.added}${r.duplicates ? ` · ${r.duplicates} already saved` : ""}`);
+      box.value = ""; out.innerHTML = "";
+      openTarget(d.key); loadTargetsQuiet();
+    };
+  }
+}
+
+async function addPerson(body) {
+  try {
+    const c = await send("/api/network/contacts", "POST", body);
+    toast(c.duplicate ? "Already saved" : `Saved ${c.name || c.email}${c.ties.length ? " · " + c.ties.length + " tie" + (c.ties.length > 1 ? "s" : "") : ""}`);
+    if (currentKey) openTarget(currentKey);
+    loadTargetsQuiet();
+  } catch (e) { toast(e.message); }
+}
+async function loadTargetsQuiet() { try { targets = (await getJSON("/api/network/targets")).targets; drawTargetList(); } catch (_) {} }
+
+// ── a saved person, used on company pages and the People list ──
+function personRow(c) {
+  const link = safeUrl(c.link);
+  return `<div class="person" data-id="${esc(c.id)}">
+    <div class="row">
+      <div class="grow">
+        <span class="name">${link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(c.name || c.email)}</a>` : esc(c.name || c.email)}</span>
+        <span class="muted"> · ${esc(c.company)}</span>
+        ${c.follow_up_due ? `<span class="due"> · follow-up due</span>` : ""}
+        <div class="hl">${esc(c.headline)}${c.location ? ` <span class="faint">· ${esc(c.location)}</span>` : ""}</div>
+        <div style="margin-top:4px">${c.ties.map(chipFor).join("")}<span class="score">score ${Number(c.score).toFixed(1)}</span></div>
+      </div>
+      <select class="st" data-act="status">${STATUSES.map(s => `<option${s === c.status ? " selected" : ""}>${esc(s)}</option>`).join("")}</select>
+      <button class="btn-sec btn-sm" data-act="draft">✉ Draft</button>
+      <button class="btn-sec btn-sm" data-act="edit">✎</button>
+    </div>
+    <div class="extra" hidden></div>
+  </div>`;
+}
+function wirePeople(root) {
+  root.querySelectorAll(".person").forEach(el => {
+    const id = el.dataset.id, extra = el.querySelector(".extra");
+    el.querySelector('[data-act="status"]').onchange = async e => {
+      try { await send(`/api/network/contacts/${id}`, "PATCH", { status: e.target.value }); toast("Marked " + e.target.value); refreshCurrent(); }
+      catch (err) { toast(err.message); }
+    };
+    el.querySelector('[data-act="draft"]').onclick = async () => {
+      if (!extra.hidden && extra.dataset.mode === "draft") { extra.hidden = true; return; }
+      const d = await getJSON(`/api/network/contacts/${id}/draft`);
+      extra.dataset.mode = "draft"; extra.hidden = false;
+      extra.innerHTML = `
+        <div class="row"><span class="label grow" style="margin:0">${esc(d.label)} · connection note</span><span class="count${d.note.length > 300 ? " over" : ""}">${d.note.length}/300</span><button class="btn-sec btn-sm" data-c="note">Copy</button></div>
+        <div class="draft">${esc(d.note)}</div>
+        <div class="row"><span class="label grow" style="margin:0">Longer message / email</span><button class="btn-sec btn-sm" data-c="message">Copy</button></div>
+        <div class="draft">${esc(d.message)}</div>
+        <div class="row"><span class="label grow" style="margin:0">Follow-up nudge</span><button class="btn-sec btn-sm" data-c="follow_up">Copy</button></div>
+        <div class="draft">${esc(d.follow_up)}</div>
+        <div class="row"><div class="grow faint" style="font-size:12px">Send it yourself, then mark it here.</div><button class="btn btn-sm" data-sent>I sent it</button></div>`;
+      extra.querySelectorAll("[data-c]").forEach(b => b.onclick = () => copyText(d[b.dataset.c], "Copied"));
+      extra.querySelector("[data-sent]").onclick = async () => {
+        const c = contacts.find(x => x.id === id);
+        const body = c && c.status === "messaged" ? { followed_up: true } : { status: "messaged" };
+        await send(`/api/network/contacts/${id}`, "PATCH", body); toast(body.followed_up ? "Follow-up noted" : "Marked messaged"); refreshCurrent();
+      };
+    };
+    el.querySelector('[data-act="edit"]').onclick = async () => {
+      if (!extra.hidden && extra.dataset.mode === "edit") { extra.hidden = true; return; }
+      const c = (await getJSON("/api/network/contacts")).contacts.find(x => x.id === id);
+      if (!c) return;
+      extra.dataset.mode = "edit"; extra.hidden = false;
+      extra.innerHTML = `<div class="form">
+        <input type="text" data-f="name" value="${esc(c.name)}" placeholder="Name" />
+        <input type="text" data-f="location" value="${esc(c.location)}" placeholder="Location" />
+        <input type="text" data-f="headline" value="${esc(c.headline)}" placeholder="Headline" class="full" />
+        <input type="text" data-f="link" value="${esc(c.link)}" placeholder="Profile link" />
+        <input type="text" data-f="email" value="${esc(c.email)}" placeholder="Email" />
+        <textarea data-f="notes" class="full" placeholder="Notes">${esc(c.notes)}</textarea>
+        <div class="row full"><button class="btn-sec btn-sm btn-danger" data-del>Delete</button><div class="grow"></div><button class="btn btn-sm" data-save>Save</button></div>
+      </div>
+      <div class="hist">${(c.history || []).map(h => `${esc(h.at.slice(0, 10))} · ${esc(h.what)}`).join("<br>")}</div>`;
+      extra.querySelector("[data-save]").onclick = async () => {
+        const body = {}; extra.querySelectorAll("[data-f]").forEach(i => body[i.dataset.f] = i.value);
+        await send(`/api/network/contacts/${id}`, "PATCH", body); toast("Saved"); refreshCurrent();
+      };
+      extra.querySelector("[data-del]").onclick = async () => {
+        await api(`/api/network/contacts/${id}`, { method: "DELETE" }); toast("Removed"); refreshCurrent();
+      };
+    };
+  });
+}
+function refreshCurrent() {
+  const view = document.querySelector("nav button.on")?.dataset.view;
+  if (view === "companies" && currentKey) { openTarget(currentKey); loadTargetsQuiet(); }
+  else if (view === "contacts") loadContacts();
+  else if (view === "followups") loadFollowUps();
+  refreshBadge();
+}
+async function refreshBadge() { try { $("dueBadge").textContent = (await getJSON("/api/network/due")).due.length || ""; } catch (_) {} }
+
+// ── people ──
+async function loadContacts() {
+  const c = await getJSON("/api/network/contacts");
+  contacts = c.contacts; STATUSES = c.statuses;
+  $("dueBadge").textContent = c.due || "";
+  const keep = [$("cStatus").value, $("cCompany").value];
+  $("cStatus").innerHTML = `<option value="">Any status</option>` + STATUSES.map(s => `<option>${esc(s)}</option>`).join("");
+  const cos = [...new Set(contacts.map(x => x.company))].sort();
+  $("cCompany").innerHTML = `<option value="">Any company</option>` + cos.map(s => `<option>${esc(s)}</option>`).join("");
+  [$("cStatus").value, $("cCompany").value] = keep;
+  drawContacts();
+}
+function drawContacts() {
+  const q = $("cSearch").value.trim().toLowerCase(), st = $("cStatus").value, co = $("cCompany").value, rel = $("cRel").value;
+  const list = contacts.filter(x => (!st || x.status === st) && (!co || x.company === co) && (!rel || x.relation === rel) &&
+    (!q || [x.name, x.company, x.headline, x.location, x.notes].join(" ").toLowerCase().includes(q)));
+  $("cList").innerHTML = list.length ? list.map(personRow).join("") :
+    `<div class="empty">${contacts.length ? "No one matches." : 'No one saved yet. Open a company under <a href="#companies">Companies</a> to find people.'}</div>`;
+  wirePeople($("cList"));
+}
+["cSearch", "cStatus", "cCompany", "cRel"].forEach(id => $(id).addEventListener("input", drawContacts));
+$("btnCsv").onclick = async () => {
+  const blob = await (await api("/api/network/contacts.csv")).blob();
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "network_contacts.csv"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+// ── follow-ups ──
+async function loadFollowUps() {
+  const c = await getJSON("/api/network/contacts");
+  contacts = c.contacts; STATUSES = c.statuses;
+  $("dueBadge").textContent = c.due || "";
+  const due = contacts.filter(x => x.follow_up_due);
+  const soon = contacts.filter(x => x.status === "messaged" && !x.follow_up_due);
+  $("fDue").innerHTML = due.length ? due.map(personRow).join("") : `<div class="empty">Nothing due. 🎉</div>`;
+  $("fSoon").innerHTML = soon.length ? soon.map(x => {
+    const left = 5 - Math.round((Date.now() - new Date(x.contacted_at.slice(0, 10) + "T12:00:00")) / 864e5);
+    return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span class="grow"><b>${esc(x.name || x.email)}</b> <span class="muted">· ${esc(x.company)}</span></span>
+      <span class="faint" style="font-size:12px">messaged ${ago(x.contacted_at)}${x.follow_ups ? ` · ${x.follow_ups} follow-up${x.follow_ups > 1 ? "s" : ""}` : ""} · nudge in ${Math.max(left, 1)} day${left > 1 ? "s" : ""}</span></div>`;
+  }).join("") : `<div class="empty">No messages waiting on an answer.</div>`;
+  wirePeople($("fDue"));
+}
+
+// ── ties ──
+let ties = { ties: [], off: [], kinds: [] };
+async function loadTies() {
+  ties = await getJSON("/api/network/ties");
+  ties.ties.forEach(x => tieKind[x.label] = x.kind);
+  $("ntKind").innerHTML = ties.kinds.map(k => `<option${k === "club" ? " selected" : ""}>${esc(k)}</option>`).join("");
+  drawTies();
+}
+function drawTies() {
+  const list = ties.ties.slice().sort((a, b) => b.weight - a.weight);
+  $("tieList").innerHTML = `<div class="tie faint" style="font-size:11px"><span></span><span>TIE</span><span>KIND</span><span class="wt">WEIGHT</span><span class="wv"></span><span></span></div>` +
+    list.map(t => { const off = ties.off.includes(t.label); return `
+    <div class="tie${off ? " off" : ""}" data-label="${esc(t.label)}">
+      <input type="checkbox" ${off ? "" : "checked"} data-t="on" title="Use this tie" />
+      <div><b>${esc(t.label)}</b>${t.custom ? ' <span class="chip">yours</span>' : ""}<div class="faint" style="font-size:12px">searches “${esc(t.search)}” · spots ${esc(t.words.join(", "))}</div></div>
+      <span class="chip ${t.kind === "employer" ? "job" : "school"}">${esc(t.kind)}</span>
+      <input type="range" class="wt" min="0.1" max="3" step="0.1" value="${t.weight}" data-t="w" />
+      <span class="mono wv">${Number(t.weight).toFixed(1)}</span>
+      ${t.custom ? `<button class="btn-sec btn-sm btn-danger" data-t="del" title="Remove">✕</button>` : "<span></span>"}
+    </div>`; }).join("");
+  $("tieList").querySelectorAll(".tie[data-label]").forEach(row => {
+    const t = ties.ties.find(x => x.label === row.dataset.label);
+    row.querySelector('[data-t="on"]').onchange = e => {
+      ties.off = e.target.checked ? ties.off.filter(x => x !== t.label) : [...ties.off, t.label];
+      row.classList.toggle("off", !e.target.checked); dirty();
+    };
+    row.querySelector('[data-t="w"]').oninput = e => { t.weight = +e.target.value; row.querySelector(".wv").textContent = t.weight.toFixed(1); dirty(); };
+    const del = row.querySelector('[data-t="del"]');
+    if (del) del.onclick = () => { ties.ties = ties.ties.filter(x => x !== t); drawTies(); dirty(); };
+  });
+}
+function dirty() { $("tiesSaved").textContent = "Unsaved changes"; }
+$("ntWeight").oninput = e => $("ntWeightV").textContent = (+e.target.value).toFixed(1);
+$("btnAddTie").onclick = () => {
+  const label = $("ntLabel").value.trim();
+  if (!label) { toast("Give the tie a name"); return; }
+  if (ties.ties.some(t => t.label.toLowerCase() === label.toLowerCase())) { toast("You already have that tie"); return; }
+  const words = $("ntWords").value.split(",").map(w => w.trim().toLowerCase()).filter(Boolean);
+  ties.ties.push({ label, short: label, kind: $("ntKind").value, search: $("ntSearch").value.trim() || label,
+                   weight: +$("ntWeight").value, words: words.length ? words : [label.toLowerCase()], custom: true });
+  ["ntLabel", "ntSearch", "ntWords"].forEach(id => $(id).value = "");
+  drawTies(); dirty();
+};
+$("btnSaveTies").onclick = async () => {
+  const weights = {}; ties.ties.filter(t => !t.custom).forEach(t => weights[t.label] = t.weight);
+  const custom = ties.ties.filter(t => t.custom).map(t => ({ label: t.label, kind: t.kind, search: t.search, weight: t.weight, words: t.words }));
+  try { ties = await send("/api/network/ties", "PUT", { weights, off: ties.off, custom }); drawTies(); $("tiesSaved").textContent = "Saved ✓"; toast("Ties saved"); }
+  catch (e) { toast(e.message); }
+};
+
+health();
+refreshBadge();
+getJSON("/api/network/ties").then(t => { t.ties.forEach(x => tieKind[x.label] = x.kind); }).catch(() => {}).finally(route);
+</script>
+</body>
+</html>

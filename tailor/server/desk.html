@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="tailor-token" content="__TAILOR_TOKEN__" />
+<title>Tailor Desk</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:      #0b0d12;
+    --surface: #11141c;
+    --card:    #181c27;
+    --border:  #222636;
+    --accent:  #4f9cf9;
+    --accent2: #a78bfa;
+    --green:   #34d399;
+    --red:     #f87171;
+    --amber:   #fbbf24;
+    --txt:     #e8eaf0;
+    --txt2:    #7c849a;
+    --txt3:    #4a5270;
+    --radius:  10px;
+    --mono:    'DM Mono', ui-monospace, monospace;
+    --sans:    'DM Sans', system-ui, sans-serif;
+    --serif:   'DM Serif Display', Georgia, serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt); font-family: var(--sans); font-size: 14px; min-height: 100vh; overflow-x: hidden; }
+  a { color: var(--accent); }
+  button { font-family: var(--sans); }
+
+  /* ── HEADER ── */
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px;
+           border-bottom: 1px solid var(--border); background: var(--surface); }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--accent2));
+               display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .logo-name { font-family: var(--serif); font-size: 19px; }
+  .logo-ver  { font-family: var(--mono); font-size: 10px; color: var(--accent); background: #4f9cf915; border: 1px solid #4f9cf930;
+               padding: 2px 7px; border-radius: 20px; margin-left: 6px; }
+  .srv { font-family: var(--mono); font-size: 11px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border);
+         background: var(--card); color: var(--txt2); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--txt3); flex-shrink: 0; }
+  .dot.ok { background: var(--green); box-shadow: 0 0 6px #34d39960; }
+  .dot.bad { background: var(--red); }
+
+  /* ── SHELL ── */
+  .shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 65px); overflow: hidden; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sb-section { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .sb-section:last-child { border-bottom: none; }
+  .sb-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--txt3); margin-bottom: 11px; }
+
+  .upload-zone { border: 1.5px dashed var(--border); border-radius: var(--radius); padding: 18px 14px; text-align: center;
+                 cursor: pointer; transition: all .2s; position: relative; }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: #4f9cf908; }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-zone p { color: var(--txt2); font-size: 12px; line-height: 1.6; }
+  .upload-zone strong { color: var(--txt); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 13px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 6px; text-align: center; }
+  .stat-n { font-family: var(--mono); font-size: 19px; font-weight: 500; line-height: 1; }
+  .stat-l { font-size: 10px; color: var(--txt2); margin-top: 3px; }
+  .blue { color: var(--accent); } .green { color: var(--green); } .amber { color: var(--amber); } .purple { color: var(--accent2); }
+
+  label { display: block; font-size: 11px; color: var(--txt2); margin-bottom: 4px; font-family: var(--mono); letter-spacing: .4px; }
+  input[type=text], textarea, select {
+    width: 100%; padding: 8px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 7px;
+    color: var(--txt); font-family: var(--sans); font-size: 13px; transition: border-color .2s; outline: none; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 70px; line-height: 1.55; }
+  .field { margin-bottom: 11px; }
+  .hint { font-size: 11px; color: var(--txt3); font-family: var(--mono); margin-top: 6px; line-height: 1.5; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { font-family: var(--mono); font-size: 11px; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--border);
+          background: var(--card); color: var(--txt2); cursor: pointer; transition: all .15s; }
+  .chip:hover, .chip.on { border-color: var(--accent); color: var(--accent); background: #4f9cf912; }
+
+  .btn-main { width: 100%; padding: 11px; border: none; border-radius: var(--radius);
+              background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-size: 14px; font-weight: 600;
+              cursor: pointer; transition: opacity .2s; position: relative; overflow: hidden; }
+  .btn-main:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-main:hover:not(:disabled) { opacity: .88; }
+  .shimmer { position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+             background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent); animation: sh 2s infinite; }
+  @keyframes sh { to { left: 160%; } }
+  .btn-sec { background: var(--card); border: 1px solid var(--border); border-radius: 8px; color: var(--txt2); font-size: 12px;
+             padding: 7px 12px; cursor: pointer; transition: all .2s; }
+  .btn-sec:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-sec:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-row { display: flex; gap: 7px; margin-bottom: 9px; flex-wrap: wrap; }
+  .icon-btn { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--txt3); cursor: pointer;
+              font-size: 13px; padding: 3px 6px; }
+  .icon-btn:hover { border-color: var(--border); color: var(--accent); }
+  .icon-btn.del:hover { color: var(--red); }
+
+  /* ── MAIN ── */
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 22px; background: var(--surface); flex-shrink: 0;
+          overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .tab { flex-shrink: 0; padding: 13px 16px; font-size: 13px; color: var(--txt2); border-bottom: 2px solid transparent; cursor: pointer;
+         transition: all .15s; font-weight: 500; margin-bottom: -1px; background: none; border-top: 0; border-left: 0; border-right: 0; }
+  .tab:hover { color: var(--txt); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tbadge { display: inline-block; font-family: var(--mono); font-size: 10px; background: var(--card); border: 1px solid var(--border);
+            border-radius: 10px; padding: 1px 6px; margin-left: 5px; color: var(--txt3); }
+  .tab.active .tbadge { background: #4f9cf915; border-color: #4f9cf940; color: var(--accent); }
+  .tab-content { flex: 1; overflow-y: auto; padding: 22px; display: none; }
+  .tab-content.active { display: block; }
+
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .toolbar input { max-width: 280px; }
+  .toolbar select { max-width: 150px; }
+
+  .tbl-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: var(--card); }
+  th { padding: 10px 12px; text-align: left; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+       color: var(--txt3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid #1a1e2a; color: var(--txt2); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #1a1e2a; color: var(--txt); }
+  tbody tr.sel td { background: #4f9cf90c; }
+  .td-role { color: var(--txt); font-weight: 500; cursor: pointer; }
+  .td-role small { display: block; color: var(--txt2); font-weight: 400; font-size: 12px; margin-top: 1px; }
+  .rn { color: var(--txt3); font-family: var(--mono); font-size: 11px; }
+  .src { font-family: var(--mono); font-size: 11px; }
+  td select { padding: 4px 6px; font-size: 12px; width: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-family: var(--mono); font-size: 10px; white-space: nowrap; }
+  .badge-new      { background: #3d446020; color: var(--txt2);   border: 1px solid #3d446040; }
+  .badge-working  { background: #4f9cf918; color: var(--accent);  border: 1px solid #4f9cf930; }
+  .badge-tailored { background: #34d39918; color: var(--green);   border: 1px solid #34d39930; }
+  .badge-not      { background: #fbbf2418; color: var(--amber);   border: 1px solid #fbbf2430; }
+  .badge-error    { background: #f8717118; color: var(--red);     border: 1px solid #f8717130; }
+  .flag { display: inline-block; font-family: var(--mono); font-size: 10px; padding: 1px 7px; border-radius: 20px; margin: 1px 3px 1px 0; }
+  .flag-red   { color: var(--red);   background: #f8717114; border: 1px solid #f8717130; }
+  .flag-amber { color: var(--amber); background: #fbbf2414; border: 1px solid #fbbf2430; }
+  .flag-blue  { color: var(--accent); background: #4f9cf914; border: 1px solid #4f9cf930; }
+
+  .prog-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px;
+               margin-bottom: 16px; display: none; }
+  .prog-wrap.show { display: block; }
+  .prog-head { display: flex; justify-content: space-between; margin-bottom: 9px; font-size: 13px; }
+  .prog-bg { background: var(--border); border-radius: 20px; height: 5px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 20px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s; width: 0%; }
+
+  .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow-y: auto; max-height: 640px;
+              font-family: var(--mono); font-size: 12px; padding: 12px; }
+  .log-entry { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px solid #1a1e2a; line-height: 1.5; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-time { color: var(--txt3); white-space: nowrap; flex-shrink: 0; }
+  .log-ok { color: var(--green); } .log-fail { color: var(--red); } .log-info { color: var(--accent); } .log-warn { color: var(--amber); }
+
+  /* preview */
+  .pv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 20px; align-items: start; }
+  .ask-row { display: flex; gap: 6px; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+  .card-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .netchip { display: inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 9px; border-radius: 20px;
+    border: 1px solid var(--border); color: var(--txt2); margin: 2px 4px 2px 0; }
+  .netchip.home { border-color: var(--accent); color: var(--accent); }
+  .netchip.tie { border-color: #22c55e66; color: #16a34a; }
+  .netrow { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); }
+  .netrow:first-child { border-top: none; }
+  .netrow .grow { flex: 1; min-width: 0; }
+  .netgroup { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--txt3); margin: 12px 0 2px; }
+  .netform { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .netform input, .netform textarea { width: 100%; box-sizing: border-box; }
+  .netdue { color: var(--amber); font-weight: 600; }
+  .card-lbl { font-family: var(--mono); font-size: 11px; color: var(--txt3); letter-spacing: 1px; text-transform: uppercase; }
+  .card-body { padding: 16px 18px; }
+  .pv-title { font-family: var(--serif); font-size: 24px; line-height: 1.2; }
+  .pv-sub { color: var(--txt2); margin-top: 4px; font-size: 13px; word-break: break-all; }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .fact { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .fact b { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--txt3); font-weight: 400; }
+  .fact span { font-size: 13px; color: var(--txt); }
+  .rep h4 { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--txt3); margin: 14px 0 6px; font-weight: 400; }
+  .rep h4:first-child { margin-top: 0; }
+  .rep ul { padding-left: 16px; color: var(--txt2); font-size: 12.5px; line-height: 1.6; }
+  .rep li { margin-bottom: 4px; }
+  .rep .gap li { color: var(--amber); }
+  .pdf-frame { width: 100%; height: 780px; border: 0; background: #fff; display: block; }
+  .posting-text { white-space: pre-wrap; font-size: 12.5px; line-height: 1.6; color: var(--txt2); max-height: 420px; overflow-y: auto; }
+  details summary { cursor: pointer; color: var(--txt2); font-size: 12px; font-family: var(--mono); }
+
+  .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; text-align: center; color: var(--txt3); gap: 10px; }
+  .empty-icon { font-size: 42px; opacity: .35; }
+  .empty h3 { font-family: var(--serif); font-size: 20px; color: var(--txt2); font-weight: 400; }
+  .empty p { font-size: 13px; line-height: 1.6; max-width: 320px; }
+
+  .notice { background: #4f9cf910; border: 1px solid #4f9cf930; border-radius: var(--radius); padding: 13px 15px; margin-bottom: 12px;
+            font-size: 12.5px; color: var(--txt2); line-height: 1.75; }
+  .notice.warn { background: #fbbf2410; border-color: #fbbf2430; }
+  .notice strong { color: var(--txt); }
+  code { font-family: var(--mono); font-size: 11.5px; color: var(--accent); background: var(--bg); padding: 2px 6px; border-radius: 4px; }
+
+  /* find roles */
+  .find-grid { display: flex; flex-direction: column; gap: 14px; }
+  details.prefs > summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; justify-content: space-between;
+                            align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 1px; color: var(--txt3);
+                            text-transform: uppercase; }
+  details.prefs > summary::-webkit-details-marker { display: none; }
+  details.prefs[open] > summary { border-bottom: 1px solid var(--border); }
+  .prefs-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 24px; }
+  .checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .checks label, .inline { display: flex; gap: 8px; align-items: center; font-family: var(--sans); font-size: 13px;
+                           color: var(--txt2); letter-spacing: 0; margin: 0; }
+  .checks input, .inline input { accent-color: var(--accent); }
+  .fitbar { width: 54px; height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; display: inline-block;
+            vertical-align: middle; margin-right: 6px; }
+  .fitbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .fitnum { font-family: var(--mono); font-size: 12px; color: var(--txt); }
+  #findBody td.td-role { width: 62%; }
+  #findBody td:nth-child(4) { max-width: 150px; }
+  .why { font-size: 11.5px; color: var(--txt2); font-weight: 400; margin-top: 4px; line-height: 1.45; }
+  .why.gap { color: var(--amber); }
+  .new-dot { font-family: var(--mono); font-size: 9px; color: var(--bg); background: var(--green); border-radius: 10px;
+             padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+  .muted { color: var(--txt3); font-size: 12px; }
+  details.companies textarea { min-height: 90px; font-family: var(--mono); font-size: 11.5px; }
+  @media (max-width: 1000px) { .find-grid { grid-template-columns: 1fr; } }
+
+  #toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; background: var(--card); border: 1px solid var(--border);
+           border-radius: 10px; padding: 11px 16px; font-size: 13px; box-shadow: 0 8px 32px rgba(0,0,0,.5); transform: translateY(16px);
+           opacity: 0; transition: all .22s; pointer-events: none; max-width: 340px; }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.success { border-color: #34d39940; } #toast.error { border-color: #f8717140; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; height: auto; overflow: visible; }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+    header { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">✂</div>
+    <div><span class="logo-name">Tailor Desk</span><span class="logo-ver">v1 · local</span></div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center">
+    <a class="srv" href="/network" style="text-decoration:none;color:var(--txt)">🤝 Network ↗</a>
+    <div class="srv" id="srv"><div class="dot" id="srvDot"></div><span id="srvLabel">Checking server…</span></div>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="sidebar">
+
+    <div class="sb-section">
+      <div class="sb-label">Add postings</div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept=".pdf,.txt" multiple />
+        <div style="font-size:22px;margin-bottom:6px">📄</div>
+        <p><strong>Drop posting PDFs here</strong><br>or click to browse<br><span style="font-size:11px;color:var(--txt3)">Up to 20 at a time · text PDFs, not scans</span></p>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>JOB LINKS · ONE PER LINE</label>
+        <textarea id="links" placeholder="https://job-boards.greenhouse.io/…&#10;https://www.google.com/about/careers/…"></textarea>
+      </div>
+      <button class="btn-sec" id="btnLinks" style="width:100%">＋ Read these links</button>
+      <div class="hint">Each link opens in the local headless browser and only the posting is kept.</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-n blue" id="stTotal">0</div><div class="stat-l">Postings</div></div>
+        <div class="stat"><div class="stat-n green" id="stTailored">0</div><div class="stat-l">Tailored</div></div>
+        <div class="stat"><div class="stat-n purple" id="stApplied">0</div><div class="stat-l">Applied</div></div>
+        <div class="stat"><div class="stat-n amber" id="stDue">0</div><div class="stat-l">Due ≤7d</div></div>
+      </div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Emphasis</div>
+      <div class="field">
+        <label>LEAN ON… (OPTIONAL)</label>
+        <input type="text" id="emphasis" placeholder="e.g. lean on my AI work" maxlength="300" />
+      </div>
+      <div class="chips" id="chips">
+        <span class="chip" data-ask="lean on product development">product</span>
+        <span class="chip" data-ask="lean on AI">AI</span>
+        <span class="chip" data-ask="lean on data analysis">data</span>
+        <span class="chip" data-ask="lean on user research">research</span>
+        <span class="chip" data-ask="lean on cross-functional work">cross-functional</span>
+        <span class="chip" data-ask="lean on strategy consulting">consulting</span>
+      </div>
+      <div class="hint">Picks among the bullet wordings you approved. It never adds a claim.</div>
+    </div>
+
+    <div class="sb-section">
+      <div class="sb-label">Launch</div>
+      <div class="btn-row">
+        <button class="btn-sec" id="btnRefresh">↻ Refresh</button>
+        <button class="btn-sec" id="btnPreview">👁 Preview</button>
+      </div>
+      <button class="btn-main" id="btnTailorAll" disabled><span class="shimmer"></span>Tailor all new postings</button>
+      <button class="btn-main" id="btnApplyAll" title="Opens your saved postings one after another, soonest deadline first. Each is filled step by step up to Submit; you review and submit it, then the next one opens.">🚀 Start applying</button>
+      <div class="hint" style="text-align:center">One-page resume per posting · truth-checked</div>
+    </div>
+
+  </aside>
+
+  <div class="main">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="postings">Postings <span class="tbadge" id="tbPostings">0</span></button>
+      <button class="tab" data-tab="find">Find roles <span class="tbadge" id="tbFind">0</span></button>
+      <button class="tab" data-tab="preview">Preview</button>
+      <button class="tab" data-tab="network">Network <span class="tbadge" id="tbNetwork">0</span></button>
+      <button class="tab" data-tab="me">My info</button>
+      <button class="tab" data-tab="words">Wordings <span class="tbadge" id="tbWords">0</span></button>
+      <button class="tab" data-tab="log">Log <span class="tbadge" id="tbLog">0</span></button>
+      <button class="tab" data-tab="setup">Setup</button>
+    </div>
+
+    <div class="tab-content active" id="tab-postings">
+      <div class="prog-wrap" id="progWrap">
+        <div class="prog-head"><span id="progLabel">Tailoring…</span><span id="progPct" style="font-family:var(--mono);color:var(--accent)">0%</span></div>
+        <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+      </div>
+      <div class="empty" id="emptyPostings">
+        <div class="empty-icon">🗂</div>
+        <h3>No postings yet</h3>
+        <p>Drop posting PDFs, paste job links, or use <strong>Save to Desk</strong> in the Tailor Assist extension.</p>
+      </div>
+      <div id="listWrap" style="display:none">
+        <div class="toolbar">
+          <input type="text" id="search" placeholder="Search role or company…" />
+          <select id="stageFilter">
+            <option value="">All stages</option><option>saved</option><option>applying</option><option>applied</option><option>skipped</option>
+          </select>
+          <button class="btn-sec" id="btnTracker" title="Every application marked applied: date, company, title, link, qualifications, description">⬇ Excel tracker</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Role</th><th>Source</th><th>Deadline</th><th>Flags</th><th>Resume</th><th>Stage</th><th></th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-find">
+      <div class="find-grid">
+        <details class="card prefs" id="prefsBox"><summary><span>What to look for</span>
+            <span id="prefsSummary" style="text-transform:none;letter-spacing:0;font-family:var(--sans);font-size:12px"></span></summary>
+          <div class="card-body"><div class="prefs-cols"><div>
+            <label>ROLE TYPES</label>
+            <div class="checks" id="focusBox"></div>
+            </div><div>
+            <div class="field"><label>ALSO TITLES WITH (COMMA-SEPARATED)</label><input type="text" id="pInclude" placeholder="e.g. chief of staff, designer" /></div>
+            <div class="field"><label>NEVER TITLES WITH</label><input type="text" id="pExclude" placeholder="e.g. crypto, defense" /></div>
+            <div class="field"><label>LOCATIONS (EMPTY = ANYWHERE IN THE U.S.)</label><input type="text" id="pLocations" placeholder="e.g. New York, San Francisco, Seattle" /></div>
+            <div class="checks">
+              <label><input type="checkbox" id="pRemote" /> Remote roles are fine</label>
+              <label><input type="checkbox" id="pSponsor" /> Hide roles that say they do not sponsor visas</label>
+            </div>
+            <div class="field" style="display:flex;gap:10px;align-items:center">
+              <label style="margin:0;white-space:nowrap">MAX YEARS ASKED</label>
+              <input type="text" id="pYears" style="width:60px" inputmode="numeric" />
+            </div>
+            <div class="checks">
+              <label><input type="checkbox" id="pDaily" /> Search every morning at <select id="pHour" style="width:auto;padding:3px 6px"></select></label>
+            </div>
+            <div class="checks">
+              <label><input type="checkbox" id="pAuto" /> After each search, save &amp; tailor up to
+                <input type="text" id="pAutoMax" style="width:38px;padding:3px 6px" inputmode="numeric" /> new roles</label>
+              <label style="padding-left:24px">with fit at least <input type="text" id="pAutoFit" style="width:44px;padding:3px 6px" inputmode="numeric" /></label>
+            </div>
+            <div class="hint" style="margin-bottom:10px">The daily search runs while the Tailor server is running. Prepared
+              roles wait on the Desk with a tailored resume; you still review and apply yourself.</div>
+            </div><div>
+            <details class="companies"><summary>Companies searched (<span id="compCount">0</span>)</summary>
+              <div class="hint" style="margin:8px 0">One per line. Greenhouse and Lever use the name in the job-board link
+                (job-boards.greenhouse.io/<b>figma</b>), Ashby likewise (jobs.ashbyhq.com/<b>ramp</b>). Workday takes the careers
+                site link (https://accenture.wd103.myworkdayjobs.com/AccentureCareers).</div>
+              <div class="field"><label>GREENHOUSE</label><textarea id="cGreenhouse"></textarea></div>
+              <div class="field"><label>LEVER</label><textarea id="cLever"></textarea></div>
+              <div class="field"><label>ASHBY</label><textarea id="cAshby"></textarea></div>
+              <div class="field"><label>WORKDAY</label><textarea id="cWorkday"></textarea></div>
+            </details>
+            <button class="btn-sec" id="btnDiscover" style="width:100%;margin-top:10px">🧭 Suggest more companies</button>
+            <div id="discoverBox" style="margin-top:10px"></div>
+            <button class="btn-sec" id="btnSavePrefs" style="width:100%;margin-top:10px">Save preferences</button>
+          </div></div></div>
+        </details>
+        <div>
+          <div class="card"><div class="card-body" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <button class="btn-main" id="btnSearch" style="width:auto;padding:10px 22px"><span class="shimmer"></span>Search now</button>
+            <div style="flex:1;min-width:220px">
+              <div id="searchStatus" class="muted">No search yet.</div>
+              <div class="prog-bg" id="searchProg" style="margin-top:8px;display:none"><div class="prog-fill" id="searchFill"></div></div>
+            </div>
+          </div></div>
+          <div class="toolbar">
+            <select id="showFilter"><option value="open">To review</option><option value="new">New in last search</option>
+              <option value="saved">Saved to Desk</option><option value="dismissed">Dismissed</option></select>
+            <input type="text" id="findSearch" placeholder="Filter by role, company or city…" />
+            <button class="btn-sec" id="btnSaveTop" title="Save and tailor the 5 best-fitting roles you have not reviewed">✂ Save top 5</button>
+          </div>
+          <div class="empty" id="emptyFind"><div class="empty-icon">🔎</div><h3>No roles yet</h3>
+            <p>Click <strong>Search now</strong>. It reads the job boards of the companies on the left and ranks what fits your resume.</p></div>
+          <div class="tbl-wrap" id="findWrap" style="display:none">
+            <table><thead><tr><th>Fit</th><th>Role</th><th>Years</th><th>Notes</th><th></th></tr></thead><tbody id="findBody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-preview">
+      <div class="empty" id="emptyPreview">
+        <div class="empty-icon">📑</div>
+        <h3>Nothing selected</h3>
+        <p>Click a role in Postings to see its facts, the tailoring report, and the resume.</p>
+      </div>
+      <div id="pvContent" style="display:none"></div>
+    </div>
+
+    <div class="tab-content" id="tab-network">
+      <div class="notice"><a href="/network" target="_blank">Open the Network page ↗</a> for every company, follow-ups and your ties.<br>People who could refer you, from the searches on each posting's Network card (open a posting
+        in Preview). Tailor never messages anyone and never reads LinkedIn: you open the searches, save the people you
+        pick here, and send the drafts yourself. Ranked by location first (same office as the role, then near you), then
+        shared school, then past employer.</div>
+      <div class="card"><div class="card-body" id="netAll"><div class="hint">Loading…</div></div></div>
+    </div>
+
+    <div class="tab-content" id="tab-me">
+      <div class="notice">Application forms ask for things a resume does not say. Enter them once here and Tailor fills
+        them on every site (Workday asks for all of these). Stored only on this Mac, in profile_overrides.json.
+        Work authorization, sponsorship and self-ID answers are not here: those stay your own on each form.</div>
+      <div class="card"><div class="card-body">
+        <div class="prefs-cols">
+          <div>
+            <div class="field"><label>STREET ADDRESS</label><input type="text" id="mAddress" autocomplete="off" /></div>
+            <div class="field"><label>CITY</label><input type="text" id="mCity" autocomplete="off" /></div>
+            <div class="field"><label>STATE</label><input type="text" id="mState" placeholder="e.g. Michigan" autocomplete="off" /></div>
+            <div class="field"><label>ZIP / POSTAL CODE</label><input type="text" id="mPostal" autocomplete="off" /></div>
+            <div class="field"><label>COUNTRY</label><input type="text" id="mCountry" placeholder="United States of America" autocomplete="off" /></div>
+          </div>
+          <div>
+            <div class="field"><label>PHONE TYPE</label><input type="text" id="mPhoneType" placeholder="Mobile" autocomplete="off" /></div>
+            <div class="field"><label>"HOW DID YOU HEAR ABOUT US?" (USUAL ANSWER)</label><input type="text" id="mHowHeard" placeholder="e.g. Company website, LinkedIn" autocomplete="off" /></div>
+            <div class="field"><label>EARLIEST START DATE FOR A NEW ROLE</label><input type="date" id="mStart" autocomplete="off" /></div>
+            <div class="field"><label>PREFERRED FIRST NAME</label><input type="text" id="mPreferred" autocomplete="off" /></div>
+            <div class="field"><label>GITHUB</label><input type="text" id="mGithub" autocomplete="off" /></div>
+            <button class="btn-main" id="btnSaveMe" style="margin-top:6px">Save my info</button>
+          </div>
+          <div>
+            <div class="note" style="color:var(--txt2);margin-bottom:8px">Questions that stop a form until you answer.
+              Leave one blank and each form asks you.</div>
+            <div class="field"><label>GPA (FIRST DEGREE ON FORMS; BLANK = NOT SHARED)</label><input type="text" id="mGpa" placeholder="e.g. 3.8" autocomplete="off" /></div>
+            <div class="field"><label>HIGH SCHOOL GRADUATION YEAR</label><input type="text" id="mHsYear" placeholder="e.g. 2017" autocomplete="off" /></div>
+            <div class="field"><label>LANGUAGES YOU SPEAK</label><input type="text" id="mLanguages" placeholder="e.g. English (native), Mandarin (conversational)" autocomplete="off" /></div>
+            <div class="field"><label>COMPANIES YOU INTERVIEWED WITH BEFORE</label><input type="text" id="mInterviewed" placeholder='comma-separated, or "none"' autocomplete="off" /></div>
+            <div class="field"><label>COMPANIES WHERE A RELATIVE WORKS</label><input type="text" id="mRelatives" placeholder='comma-separated, or "none"' autocomplete="off" /></div>
+            <div class="field"><label>GOVERNMENT OFFICIAL, OR RELATED TO ONE?</label>
+              <select id="mGov"><option value="">ask me on each form</option><option>No</option><option>Yes</option></select></div>
+            <div class="field"><label>ANY CONFLICT OF INTEREST?</label>
+              <select id="mConflict"><option value="">ask me on each form</option><option>No</option><option>Yes</option></select></div>
+          </div>
+          <div>
+            <label>FROM YOUR RESUME</label>
+            <div id="meResume" class="posting-text" style="max-height:none"></div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="tab-content" id="tab-words">
+      <div class="notice">Other wordings of your own bullets: the same facts and numbers, leaning toward what different
+        postings ask for (the tailoring guide: lead with the posting's verbs and keywords). Tailoring uses a wording only
+        after you approve it, and only when it fits the posting better than your original. Each one passed the fact
+        check (no new number, name, tool or bigger role).</div>
+      <div class="card"><div class="card-body">
+        <label>SKILLS YOU CONFIRMED ("I HAVE THIS" IN THE EXTENSION)</label>
+        <div class="chips" id="mySkills"></div>
+      </div></div>
+      <div class="card"><div class="card-body">
+        <label>AI KEYWORD WORDINGS (USED AUTOMATICALLY)</label>
+        <div style="color:var(--txt2);margin-bottom:8px">The local model re-worded each bullet to show one posting
+          keyword that the bullet already proves (for example "data cleaning" for your data-cleanup request). A wording
+          is used only when a posting asks for that keyword, in one bullet at most. Each passed a strict check: no word,
+          number, name, audience or role that your bullet does not already have, and no keyword lost. Reject any you
+          would not say.</div>
+        <div id="aiHead" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"></div>
+        <div id="aiList"></div>
+      </div></div>
+      <div id="wordsList"></div>
+    </div>
+
+    <div class="tab-content" id="tab-log">
+      <div class="empty" id="emptyLog">
+        <div class="empty-icon">📝</div>
+        <h3>No activity yet</h3>
+        <p>What the Desk does appears here.</p>
+      </div>
+      <div class="log-wrap" id="logWrap" style="display:none"></div>
+    </div>
+
+    <div class="tab-content" id="tab-setup">
+      <div class="notice">
+        <strong>How the Desk works.</strong> Postings come from PDFs, links, or the extension's <strong>Save to Desk</strong> button.
+        Each one is read for its facts (deadline, years asked, sponsorship wording, pay, on-site days) and tailored with the same
+        rules as the extension: your base resume, the bullet wordings you approved, one page, truth-checked. Nothing is sent
+        to an employer; you upload the PDF yourself.
+      </div>
+      <div class="card"><div class="card-body" style="font-size:13px;color:var(--txt2);line-height:2">
+        <b style="color:var(--txt)">The server</b> starts by itself at login and restarts if it stops
+        (<code>bash scripts/autostart.sh status</code> to check).<br>
+        <b style="color:var(--txt)">Open the Desk:</b> <code>http://127.0.0.1:8765/desk</code>, or <strong>Open Tailor Desk</strong> in the extension popup.<br>
+        <b style="color:var(--txt)">Save from a job page:</b> open the posting, click the Tailor Assist icon, then <strong>Save posting to Desk</strong>.<br>
+        <b style="color:var(--txt)">Where files live:</b> the queue in <code>~/project_tailor_data/desk/postings.json</code>,
+        resumes in <code>~/project_tailor_data/output/tailored/</code>.
+      </div></div>
+      <div class="card"><div class="card-body" style="font-size:13px;color:var(--txt2);line-height:1.9">
+        <b style="color:var(--txt)">The Tailor Assist extension</b><br>
+        <button class="btn-sec" id="btnExtension" title="The extension's files as a zip. Your access token is not in it.">⬇ Download extension (.zip)</button><br>
+        To install: unzip it → open <code>chrome://extensions</code> → turn on <strong>Developer mode</strong> →
+        <strong>Load unpacked</strong> → pick the <code>TailorAssist</code> folder → in the extension's <strong>Options</strong>,
+        paste your access token (<code>~/project_tailor_data/server_token.txt</code>).<br>
+        Updating: replace the folder's files with the new ones, then click the reload arrow ↻ on <code>chrome://extensions</code>.
+        It works where this server runs (it talks to <code>127.0.0.1:8765</code> only).
+      </div></div>
+      <div class="notice warn">
+        <strong>Links:</strong> reading a link is the only time the Desk goes outside your computer: it opens that one page, as
+        your browser would. Links to this computer or your home network are refused. Sites that need a login (Workday,
+        some campus portals) cannot be read this way: use the extension's Save to Desk while you are signed in.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+// ── API ──────────────────────────────────────────────────────────────────────
+const TOKEN = document.querySelector('meta[name="tailor-token"]').content;
+async function api(path, opts = {}) {
+  const headers = Object.assign({ "X-Tailor-Token": TOKEN }, opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {});
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (!res.ok) {
+    let msg = "HTTP " + res.status;
+    try { const j = await res.json(); msg = j.detail || msg; } catch (_) {}
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return res;
+}
+const getJSON = async (p, o) => (await api(p, o)).json();
+
+// ── State ────────────────────────────────────────────────────────────────────
+let postings = [];
+let selected = null;
+let busy = false;
+let logCount = 0;
+const pdfUrls = new Map();  // resume id -> object URL
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+// Everything from a job site is shown as text, never as HTML.
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function store(k, v) { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (_) {} }
+function recall(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+
+function toast(msg, type = "") {
+  const t = $("toast");
+  t.textContent = msg; t.className = "show " + type;
+  clearTimeout(t._t); t._t = setTimeout(() => (t.className = ""), 3500);
+}
+function log(msg, type = "info") {
+  logCount++;
+  $("tbLog").textContent = logCount;
+  $("emptyLog").style.display = "none";
+  const w = $("logWrap"); w.style.display = "block";
+  w.append(el("div", { class: "log-entry" }, el("span", { class: "log-time", text: new Date().toLocaleTimeString() }),
+                                             el("span", { class: "log-" + type, text: msg })));
+  w.scrollTop = w.scrollHeight;
+}
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === "tab-" + name));
+  store("desk_tab", name);
+}
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+function daysUntil(iso) { return iso ? Math.round((new Date(iso + "T00:00:00") - new Date(new Date().toDateString())) / 864e5) : null; }
+function money(n) { return n ? "$" + Math.round(n / 1000) + "k" : ""; }
+function statusBadge(p) {
+  if (p._working) return el("span", { class: "badge badge-working", text: "tailoring…" });
+  if (p.status === "tailored") return el("span", { class: "badge badge-tailored", text: "tailored" });
+  if (p.status === "not tailored") return el("span", { class: "badge badge-not", text: "not tailored" });
+  if (p.status === "error") return el("span", { class: "badge badge-error", text: "error" });
+  return el("span", { class: "badge badge-new", text: "new" });
+}
+const SRC = { pdf: "📄 PDF", link: "🔗 link", extension: "🧩 page", text: "✎ text" };
+
+// ── Server status ────────────────────────────────────────────────────────────
+async function checkServer() {
+  try {
+    const h = await (await fetch("/api/health")).json();
+    $("srvDot").className = "dot ok";
+    $("srvLabel").textContent = "Server ready" + (h.model === "stub" ? " · no writing model" : " · local model on");
+    return true;
+  } catch (_) {
+    $("srvDot").className = "dot bad";
+    $("srvLabel").textContent = "Server not running";
+    return false;
+  }
+}
+
+// ── Loading & rendering ──────────────────────────────────────────────────────
+async function refresh(quiet) {
+  try {
+    const keep = new Set(postings.filter((p) => p._working).map((p) => p.id));
+    postings = await getJSON("/api/desk/postings");
+    postings.forEach((p) => { if (keep.has(p.id)) p._working = true; });
+    render();
+    if (!quiet) log(`Loaded ${postings.length} posting${postings.length === 1 ? "" : "s"}`, "info");
+  } catch (e) {
+    log("Could not load postings: " + e.message, "fail");
+    toast("Could not load postings: " + e.message, "error");
+  }
+}
+
+function render() {
+  const q = $("search").value.trim().toLowerCase();
+  const stage = $("stageFilter").value;
+  const rows = postings.filter((p) => (!stage || p.stage === stage) &&
+    (!q || (p.title + " " + p.company).toLowerCase().includes(q)));
+  $("tbPostings").textContent = postings.length;
+  $("emptyPostings").style.display = postings.length ? "none" : "flex";
+  $("listWrap").style.display = postings.length ? "block" : "none";
+  const tb = $("tbody"); tb.textContent = "";
+  rows.forEach((p, i) => {
+    const d = daysUntil(p.facts && p.facts.deadline);
+    const stageSel = el("select", { title: "Where this application stands", onchange: (e) => setStage(p, e.target.value) },
+      ["saved", "applying", "applied", "skipped"].map((s) => el("option", { value: s, selected: s === p.stage, text: s })));
+    const tr = el("tr", { class: selected === p.id ? "sel" : "" },
+      el("td", { class: "rn", text: i + 1 }),
+      el("td", { class: "td-role", onclick: () => openPreview(p.id) }, p.title, el("small", { text: p.company || "—" })),
+      el("td", { class: "src", text: SRC[p.source] || p.source }),
+      el("td", { style: d === null ? "" : d < 0 ? "color:var(--red)" : d <= 7 ? "color:var(--amber)" : "", text: fmtDate(p.facts && p.facts.deadline) }),
+      el("td", {}, (p.flags || []).map((f) => el("span", { class: "flag flag-" + f.level, text: f.text })), (p.flags || []).length ? null : "—"),
+      el("td", {}, statusBadge(p)),
+      el("td", {}, stageSel),
+      el("td", { style: "white-space:nowrap" },
+        p.url ? el("button", { class: "icon-btn", title: "Apply: open the application and fill it (you review and submit)", onclick: () => applyNow(p) }, "🚀") : null,
+        el("button", { class: "icon-btn", title: "Tailor", onclick: () => tailorOne(p.id) }, "✂"),
+        el("button", { class: "icon-btn", title: "Preview", onclick: () => openPreview(p.id) }, "👁"),
+        el("button", { class: "icon-btn del", title: "Remove", onclick: () => removePosting(p) }, "✕")));
+    tb.append(tr);
+  });
+  $("stTotal").textContent = postings.length;
+  $("stTailored").textContent = postings.filter((p) => p.status === "tailored").length;
+  $("stApplied").textContent = postings.filter((p) => p.stage === "applied").length;
+  $("stDue").textContent = postings.filter((p) => { const d = daysUntil(p.facts && p.facts.deadline); return d !== null && d >= 0 && d <= 7; }).length;
+  $("btnTailorAll").disabled = busy || !postings.some((p) => p.status === "new");
+}
+
+// ── Adding postings ──────────────────────────────────────────────────────────
+async function addPdfs(files) {
+  const list = [...files].filter((f) => /\.(pdf|txt)$/i.test(f.name));
+  if (!list.length) { toast("Choose PDF files", "error"); return; }
+  const fd = new FormData();
+  list.slice(0, 20).forEach((f) => fd.append("files", f));
+  log(`Reading ${list.length} PDF${list.length > 1 ? "s" : ""}…`, "info");
+  try {
+    const added = await getJSON("/api/desk/postings/pdf", { method: "POST", body: fd });
+    added.forEach((p) => log(`📄 Added "${p.title}" (${p.chars} characters)`, "ok"));
+    toast(`Added ${added.length} posting${added.length > 1 ? "s" : ""}`, "success");
+    await refresh(true);
+  } catch (e) {
+    log("PDF: " + e.message, "fail"); toast(e.message, "error");
+  }
+  $("fileInput").value = "";
+}
+
+async function addLinks() {
+  const urls = $("links").value.split(/\s+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+  if (!urls.length) { toast("Paste one or more http(s) links", "error"); return; }
+  $("btnLinks").disabled = true;
+  let ok = 0;
+  const left = [];
+  for (const [i, url] of urls.entries()) {
+    $("btnLinks").textContent = `Reading ${i + 1} of ${urls.length}…`;
+    log(`🔗 Opening ${url}`, "info");
+    try {
+      const p = await getJSON("/api/desk/postings", { method: "POST", body: JSON.stringify({ url, source: "link" }) });
+      if (p.duplicate) log(`Already on the Desk: "${p.title}"`, "warn");
+      else { ok++; log(`Added "${p.title}" · ${p.company || "?"} (${p.chars} characters)`, "ok"); }
+    } catch (e) {
+      left.push(url);
+      log(`Could not read ${url}: ${e.message}`, "fail");
+    }
+  }
+  $("links").value = left.join("\n");
+  $("btnLinks").disabled = false; $("btnLinks").textContent = "＋ Read these links";
+  toast(left.length ? `Added ${ok}; ${left.length} left in the box (see Log)` : `Added ${ok} posting${ok === 1 ? "" : "s"}`, left.length ? "error" : "success");
+  await refresh(true);
+}
+
+// ── Tailoring ────────────────────────────────────────────────────────────────
+function emphasis() { return $("emphasis").value.trim(); }
+
+async function tailorOne(id, ask) {
+  const p = postings.find((x) => x.id === id);
+  if (!p || p._working) return;
+  p._working = true; render();
+  const instruction = ask !== undefined ? ask : emphasis();
+  log(`✂ Tailoring "${p.title}"${instruction ? " · " + instruction : ""}`, "info");
+  try {
+    const r = await getJSON(`/api/desk/postings/${id}/tailor`, { method: "POST", body: JSON.stringify({ instruction }) });
+    Object.assign(p, r); p._working = false;
+    const res = r.result || {};
+    if (r.status === "tailored") log(`✅ ${p.title}: ${res.summary || "tailored"}`, "ok");
+    else log(`⚠ ${p.title}: ${res.summary || "not tailored"}`, "warn");
+  } catch (e) {
+    p._working = false; p.status = "error";
+    log(`❌ ${p.title}: ${e.message}`, "fail");
+  }
+  render();
+  if (selected === id) openPreview(id, true);
+}
+
+async function tailorAll() {
+  const queue = postings.filter((p) => p.status === "new");
+  if (!queue.length || busy) return;
+  busy = true; render();
+  $("progWrap").classList.add("show");
+  switchTab("postings");
+  for (const [i, p] of queue.entries()) {
+    $("progLabel").textContent = `Tailoring ${i + 1} of ${queue.length}: ${p.title}`;
+    const pct = Math.round((i / queue.length) * 100);
+    $("progPct").textContent = pct + "%"; $("progFill").style.width = pct + "%";
+    await tailorOne(p.id);
+  }
+  $("progLabel").textContent = "Done"; $("progPct").textContent = "100%"; $("progFill").style.width = "100%";
+  busy = false; render();
+  toast(`Tailored ${queue.length} posting${queue.length > 1 ? "s" : ""}`, "success");
+  setTimeout(() => $("progWrap").classList.remove("show"), 2500);
+}
+
+// The apply queue: saved / in-progress postings with a link, soonest deadline first. The first opens now; each later
+// one opens by itself after the person submits the one before (the extension asks the Desk for the next).
+async function startApplying() {
+  const rows = postings.filter((p) => p.url && (p.stage === "saved" || p.stage === "applying") && !/12twenty\.com/.test(p.url))
+    .sort((a, b) => (daysUntil(a.facts && a.facts.deadline) ?? 999) - (daysUntil(b.facts && b.facts.deadline) ?? 999));
+  if (!rows.length) { toast("No saved postings with a link to apply to", "error"); return; }
+  if (!confirm(`Apply to ${rows.length} posting${rows.length > 1 ? "s" : ""} one after another?\n\nEach opens in a new tab and is filled step by step up to Submit. You review it and click Submit yourself; then the next one opens.`)) return;
+  try {
+    await getJSON("/api/desk/queue", { method: "POST", body: JSON.stringify({ ids: rows.map((p) => p.id) }) });
+    const next = await getJSON("/api/desk/queue/next", { method: "POST" });
+    if (next.done) { toast("Nothing left to apply to", "error"); return; }
+    window.open(next.url, "_blank", "noopener");
+    log(`🚀 Applying: ${next.company ? next.company + ": " : ""}${next.title} (${next.left} more after this one)`, "info");
+    setTimeout(() => refresh(true), 1500);
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function applyNow(p) {
+  try {
+    const { url } = await getJSON(`/api/desk/postings/${p.id}/open`, { method: "POST" });
+    window.open(url, "_blank", "noopener");
+    log(`🚀 Opened ${p.company ? p.company + ": " : ""}${p.title}. The extension fills it; you review and submit.`, "info");
+    setTimeout(() => refresh(true), 1500);
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function downloadTracker() {
+  try {
+    const res = await api("/api/desk/tracker");
+    const a = el("a", { href: URL.createObjectURL(await res.blob()), download: "Application_Tracker.xlsx" });
+    document.body.append(a); a.dispatchEvent(new MouseEvent("click")); a.remove();
+    log("⬇ Downloaded Application_Tracker.xlsx", "ok");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function downloadExtension() {
+  try {
+    const res = await api("/api/desk/extension.zip");
+    const a = el("a", { href: URL.createObjectURL(await res.blob()), download: "TailorAssist_extension.zip" });
+    document.body.append(a); a.dispatchEvent(new MouseEvent("click")); a.remove();
+    log("⬇ Downloaded TailorAssist_extension.zip: unzip it, then Load unpacked in chrome://extensions", "ok");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+async function setStage(p, stage) {
+  try { Object.assign(p, await getJSON(`/api/desk/postings/${p.id}`, { method: "PATCH", body: JSON.stringify({ stage }) }));
+        log(`${p.title} → ${stage}`, "info"); render(); }
+  catch (e) { toast(e.message, "error"); }
+}
+
+async function removePosting(p) {
+  if (!confirm(`Remove "${p.title}" from the Desk? Its tailored resume file stays in output/tailored.`)) return;
+  try { await api(`/api/desk/postings/${p.id}`, { method: "DELETE" }); log(`Removed "${p.title}"`, "warn");
+        if (selected === p.id) { selected = null; $("pvContent").style.display = "none"; $("emptyPreview").style.display = "flex"; }
+        await refresh(true); }
+  catch (e) { toast(e.message, "error"); }
+}
+
+// ── Preview ──────────────────────────────────────────────────────────────────
+async function resumeUrl(id) {
+  if (pdfUrls.has(id)) return pdfUrls.get(id);
+  const res = await api("/api/resume?id=" + encodeURIComponent(id));
+  const m = /filename="?([^";]+)"?/.exec(res.headers.get("content-disposition") || "");
+  const url = URL.createObjectURL(await res.blob());
+  const out = { url, name: m ? m[1] : "resume.pdf" };
+  pdfUrls.set(id, out);
+  return out;
+}
+
+async function openPreview(id, stay) {
+  selected = id; store("desk_selected", id); render();
+  if (!stay) switchTab("preview");
+  let p;
+  try { p = await getJSON(`/api/desk/postings/${id}`); } catch (e) { toast(e.message, "error"); return; }
+  const f = p.facts || {};
+  const res = p.result || null;
+  const rep = res && res.report || {};
+  const box = $("pvContent"); box.textContent = "";
+  $("emptyPreview").style.display = "none"; box.style.display = "block";
+
+  const d = daysUntil(f.deadline);
+  const fact = (k, v) => el("div", { class: "fact" }, el("b", { text: k }), el("span", { text: v || "—" }));
+  const sponsor = { not_stated: "not stated", limited: "limited", restricted: "does not sponsor", mentioned: "mentioned" }[f.sponsorship] || "—";
+  const pay = f.salary_min || f.salary_max ? [money(f.salary_min), money(f.salary_max)].filter(Boolean).join(" – ") : "";
+
+  const left = el("div", {},
+    el("div", { class: "card" }, el("div", { class: "card-body" },
+      el("div", { class: "pv-title", text: p.title }),
+      el("div", { class: "pv-sub" }, p.company || "", p.url ? " · " : "", p.url ? el("a", { href: p.url, target: "_blank", rel: "noopener noreferrer", text: "open posting ↗" }) : (p.file || "")),
+      el("div", { style: "margin-top:10px" }, (p.flags || []).map((x) => el("span", { class: "flag flag-" + x.level, text: x.text }))),
+      el("div", { class: "facts" },
+        fact("Deadline", f.deadline ? fmtDate(f.deadline) + (d !== null ? (d < 0 ? " (passed)" : ` (${d} days)`) : "") : ""),
+        fact("Years asked", f.min_years ? f.min_years + "+" : "not stated"),
+        fact("Sponsorship", sponsor), fact("Pay", pay || "not stated"),
+        fact("On-site", f.onsite_days_min ? f.onsite_days_min + " days/week" : "not stated"),
+        fact("MBA", f.mba_required ? "required" : "not required")),
+      f.sponsorship_quote ? el("div", { class: "hint", text: "“" + f.sponsorship_quote + "”" }) : null)),
+    reportCard(p, res, rep),
+    el("div", { class: "card", id: "netCard" }, el("div", { class: "card-body" }, el("div", { class: "hint", text: "Loading people to ask for a referral…" }))),
+    el("div", { class: "card" }, el("div", { class: "card-body" },
+      el("label", { text: "NOTES" }),
+      el("textarea", { id: "notes", placeholder: "Contacts, referral, what you wrote…", onchange: async (e) => {
+        try { await getJSON(`/api/desk/postings/${p.id}`, { method: "PATCH", body: JSON.stringify({ notes: e.target.value }) }); toast("Notes saved", "success"); }
+        catch (err) { toast(err.message, "error"); } } }, p.notes || ""),
+      el("details", { style: "margin-top:12px" }, el("summary", { text: `Posting text (${p.chars} characters)` }),
+        el("div", { class: "posting-text", style: "margin-top:8px", text: p.text })))));
+
+  const right = el("div", { class: "card" },
+    el("div", { class: "card-head" }, el("span", { class: "card-lbl", text: "Resume" }), el("span", { id: "pdfActions" })),
+    el("div", { id: "pdfBody" }, el("div", { class: "empty", style: "height:240px" },
+      el("div", { class: "empty-icon", text: "📄" }),
+      el("h3", { text: res ? "Not tailored" : "Not tailored yet" }),
+      el("p", { text: res ? (res.summary || "") + " Your default resume is used for this one." : "Click Tailor to make a one-page resume for this posting." }))));
+
+  box.append(el("div", { class: "pv-grid" }, left, right));
+  networkCard(p.id).catch((e) => { const c = $("netCard"); if (c) c.replaceChildren(el("div", { class: "card-body" }, el("div", { class: "notice warn", text: "Network: " + e.message }))); });
+
+  if (res && res.applied && res.id) {
+    try {
+      const pdf = await resumeUrl(res.id);
+      $("pdfBody").replaceChildren(el("iframe", { class: "pdf-frame", src: pdf.url, title: "Tailored resume" }));
+      $("pdfActions").replaceChildren(el("a", { class: "btn-sec", href: pdf.url, download: pdf.name, style: "text-decoration:none", text: "⬇ Download PDF" }));
+    } catch (e) {
+      $("pdfBody").replaceChildren(el("div", { class: "notice warn", style: "margin:16px", text: "Could not load the PDF: " + e.message }));
+    }
+  }
+}
+
+function reportCard(p, res, rep) {
+  const ask = el("input", { type: "text", placeholder: "Re-tailor leaning on… (optional)", value: p.instruction || "", maxlength: "300" });
+  const head = el("div", { class: "card-head" }, el("span", { class: "card-lbl", text: "Tailoring report" }),
+    res && res.applied ? el("span", { class: "badge badge-tailored", text: "one page · truth-checked" }) : null);
+  const askRow = el("div", { class: "ask-row" }, ask,
+    el("button", { class: "btn-sec", style: "white-space:nowrap", onclick: () => tailorOne(p.id, ask.value.trim()) }, res ? "↻ Re-tailor" : "✂ Tailor"));
+  if (!res) return el("div", { class: "card" }, head, el("div", { class: "card-body" }, askRow, el("div", { class: "hint", text: "Not tailored yet." })));
+  const list = (items, cls) => items && items.length ? el("ul", { class: cls || "" }, items.map((t) => el("li", { text: t }))) : el("div", { class: "hint", text: "—" });
+  const worded = (rep.rewrites || []).map((r) => r.replace(/^([^:]+): used the '([^']+)' wording: '(.*)'$/, "$1 · $2: $3"));
+  return el("div", { class: "card" }, head, el("div", { class: "card-body rep" }, askRow,
+    el("h4", { text: "What the posting stresses" }),
+    el("div", {}, (rep.emphasis || []).map((c) => el("span", { class: "flag flag-blue", text: c.replace(/_/g, " ") })), (rep.emphasis || []).length ? null : "—"),
+    el("h4", { text: "Education first" }), el("div", { style: "font-size:12.5px;color:var(--txt2)", text: rep.education_first ? `${rep.education_first} (${rep.education_reason})` : "—" }),
+    el("h4", { text: "Projects shown" }), list(rep.projects),
+    el("h4", { text: `Bullets worded for this posting (${worded.length})` }), list(worded),
+    el("h4", { text: "Trimmed to fit one page" }), list(rep.trimmed),
+    el("h4", { text: "Gaps and warnings" }), list([...(rep.gaps || []), ...(rep.warnings || [])], "gap")));
+}
+
+// ── Find roles ───────────────────────────────────────────────────────────────
+let findRows = [];
+let focusLabels = {};
+let searchPoll = null;
+const splitList = (v) => v.split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+
+async function loadPrefs() {
+  const { prefs, focus_labels } = await getJSON("/api/search/prefs");
+  focusLabels = focus_labels;
+  $("focusBox").replaceChildren(...Object.entries(focus_labels).map(([k, label]) =>
+    el("label", {}, el("input", { type: "checkbox", value: k, checked: prefs.focus.includes(k) }), label)));
+  $("pInclude").value = prefs.include_words.join(", ");
+  $("pExclude").value = prefs.exclude_words.join(", ");
+  $("pLocations").value = prefs.locations.join(", ");
+  $("pRemote").checked = prefs.remote_ok;
+  $("pSponsor").checked = prefs.skip_no_sponsorship;
+  $("pYears").value = prefs.max_years;
+  $("pDaily").checked = prefs.daily;
+  $("pAuto").checked = prefs.auto_save;
+  $("pAutoMax").value = prefs.auto_max;
+  $("pAutoFit").value = prefs.auto_min_fit;
+  $("pHour").replaceChildren(...[...Array(24).keys()].map((h) =>
+    el("option", { value: h, selected: h === prefs.daily_hour, text: (h % 12 || 12) + (h < 12 ? " am" : " pm") })));
+  $("cGreenhouse").value = prefs.companies.greenhouse.join("\n");
+  $("cLever").value = prefs.companies.lever.join("\n");
+  $("cAshby").value = prefs.companies.ashby.join("\n");
+  $("cWorkday").value = prefs.companies.workday.join("\n");
+  const nComp = Object.values(prefs.companies).reduce((n, l) => n + l.length, 0);
+  $("compCount").textContent = nComp;
+  $("prefsSummary").textContent = `${prefs.focus.map((f) => focus_labels[f]).join(", ")} · ` +
+    `${prefs.locations.length ? prefs.locations.join(", ") : "anywhere in the U.S."} · up to ${prefs.max_years} years · ${nComp} companies ▾`;
+}
+
+async function savePrefs() {
+  const body = {
+    focus: [...document.querySelectorAll("#focusBox input:checked")].map((i) => i.value),
+    include_words: splitList($("pInclude").value), exclude_words: splitList($("pExclude").value),
+    locations: splitList($("pLocations").value), remote_ok: $("pRemote").checked,
+    skip_no_sponsorship: $("pSponsor").checked, max_years: parseInt($("pYears").value, 10) || 0,
+    daily: $("pDaily").checked, daily_hour: parseInt($("pHour").value, 10) || 0,
+    auto_save: $("pAuto").checked, auto_max: parseInt($("pAutoMax").value, 10) || 0,
+    auto_min_fit: parseInt($("pAutoFit").value, 10) || 0,
+    companies: { greenhouse: splitList($("cGreenhouse").value), lever: splitList($("cLever").value),
+                 ashby: splitList($("cAshby").value), workday: splitList($("cWorkday").value) },
+  };
+  try {
+    await getJSON("/api/search/prefs", { method: "PUT", body: JSON.stringify(body) });
+    await loadPrefs();
+    toast("Preferences saved. They apply to the next search.", "success");
+    log("Search preferences saved", "info");
+  } catch (e) { toast(e.message, "error"); }
+}
+
+function describeRun(last) {
+  if (!last) return "No search yet.";
+  const when = new Date(last.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const prep = last.prepared && last.prepared.length ? ` ${last.prepared.length} prepared on the Desk.` : "";
+  return `Last search ${when}: read ${last.read.toLocaleString()} openings from ${last.feeds} companies, ${last.kept} fit, ${last.new} new.${prep}` +
+    (last.errors && last.errors.length ? ` (${last.errors.length} feeds did not answer)` : "");
+}
+
+async function searchStatus() {
+  const st = await getJSON("/api/search/status");
+  const bar = $("searchProg");
+  if (st.running) {
+    $("btnSearch").disabled = true;
+    bar.style.display = "block";
+    const pct = st.total ? Math.round((st.done / st.total) * 100) : 5;
+    $("searchFill").style.width = pct + "%";
+    $("searchStatus").textContent = st.stage === "reading job feeds" ? `Reading job boards… ${st.done} of ${st.total} companies`
+      : st.stage === "ranking" ? `Ranking ${st.total} roles against your resume…`
+      : st.stage === "preparing" ? `Tailoring resumes for the best new roles… ${st.done} of ${st.total}` : "Starting…";
+    return true;
+  }
+  $("btnSearch").disabled = false;
+  bar.style.display = "none";
+  $("searchStatus").textContent = st.error ? "The last search failed: " + st.error : describeRun(st.last);
+  return false;
+}
+
+async function runSearch() {
+  try {
+    const r = await getJSON("/api/search/run", { method: "POST" });
+    log(r.started ? "🔎 Searching job boards…" : "A search is already running", "info");
+  } catch (e) { toast(e.message, "error"); return; }
+  clearInterval(searchPoll);
+  searchPoll = setInterval(async () => {
+    if (!(await searchStatus())) {
+      clearInterval(searchPoll);
+      await Promise.all([loadFind(), refresh(true)]);
+      const n = findRows.filter((r) => r.new).length;
+      toast(`Search done: ${findRows.length} roles to review, ${n} new`, "success");
+      log(`🔎 Search done: ${findRows.length} roles to review, ${n} new`, "ok");
+    }
+  }, 1500);
+  searchStatus();
+}
+
+function runSearchPollOnly() {  // a search already running (started earlier or by the daily schedule)
+  clearInterval(searchPoll);
+  searchPoll = setInterval(async () => { if (!(await searchStatus())) { clearInterval(searchPoll); loadFind(); } }, 1500);
+}
+
+async function loadFind() {
+  try {
+    const r = await getJSON("/api/search/results?show=" + encodeURIComponent($("showFilter").value));
+    findRows = r.rows;
+    $("tbFind").textContent = r.counts.open;
+    renderFind();
+  } catch (e) { log("Could not load search results: " + e.message, "fail"); }
+}
+
+function renderFind() {
+  const q = $("findSearch").value.trim().toLowerCase();
+  const rows = findRows.filter((r) => !q || (r.title + " " + r.company_name + " " + r.location).toLowerCase().includes(q));
+  $("emptyFind").style.display = rows.length ? "none" : "flex";
+  $("findWrap").style.display = rows.length ? "block" : "none";
+  const tb = $("findBody"); tb.textContent = "";
+  const showing = $("showFilter").value;
+  for (const r of rows) {
+    const notes = [];
+    if (r.new) notes.push(el("span", { class: "flag flag-blue", text: "new" }));
+    if (r.deadline) notes.push(el("span", { class: "flag flag-amber", text: "due " + fmtDate(r.deadline) }));
+    if (r.sponsorship === "restricted") notes.push(el("span", { class: "flag flag-red", text: "no sponsorship" }));
+    if (r.clearance) notes.push(el("span", { class: "flag flag-red", text: "clearance / citizenship" }));
+    if (r.outside_cities) notes.push(el("span", { class: "flag flag-amber", text: "outside your cities", title: "A graduate / early-career program kept although it is not in your saved cities" }));
+    if (r.early) notes.push(el("span", { class: "flag flag-blue", text: "grad / early career" }));
+    if (r.source === "found") notes.push(el("span", { class: "flag flag-blue", text: r.category ? "found · " + r.category : "found", title: "Found by hand on a careers site or a school job board" + (r.checked ? "" : " (posting not read yet)") }));
+    if (r.also && r.also.length) notes.push(el("span", { class: "flag flag-blue", title: r.also.map((a) => a.location).join("\n"),
+                                                     text: `+${r.also.length} more listing${r.also.length > 1 ? "s" : ""}` }));
+    const actions = showing === "dismissed"
+      ? [el("button", { class: "icon-btn", title: "Put back", onclick: () => restoreRole(r) }, "↺")]
+      : showing === "saved"
+        ? [el("button", { class: "icon-btn", title: "Show on the Desk", onclick: () => r.desk_id && openPreview(r.desk_id) }, "👁")]
+        : [el("button", { class: "icon-btn", title: "Save to the Desk and tailor", onclick: (e) => saveRole(r, e.currentTarget) }, "✂"),
+           el("button", { class: "icon-btn del", title: "Not for me", onclick: () => dismissRole(r) }, "✕")];
+    tb.append(el("tr", {},
+      el("td", { style: "white-space:nowrap" }, el("span", { class: "fitbar" }, el("i", { style: `width:${r.fit}%` })),
+         el("span", { class: "fitnum", text: r.fit })),
+      el("td", { class: "td-role" }, el("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--txt);text-decoration:none", text: r.title }),
+         el("small", { text: `${r.company_name} · ${r.location || "location not given"}` }),
+         (r.why && r.why.length) ? el("div", { class: "why", text: "Fits: " + r.why.join(" · ") }) : null,
+         (r.gaps && r.gaps.length) ? el("div", { class: "why gap", text: "Light on: " + r.gaps.join(", ") }) : null),
+      el("td", { class: "rn", text: r.years ? r.years + "+" : "—" }),
+      el("td", {}, notes.length ? notes : el("span", { class: "muted", text: r.host })),
+      el("td", { style: "white-space:nowrap" }, el("a", { class: "icon-btn", href: r.url, target: "_blank", rel: "noopener noreferrer", title: "Open the posting", style: "text-decoration:none" }, "↗"), actions)));
+  }
+}
+
+async function discoverCompanies() {
+  const box = $("discoverBox");
+  $("btnDiscover").disabled = true; $("btnDiscover").textContent = "Checking about 300 job boards…";
+  box.replaceChildren(el("div", { class: "hint", text: "Looking for companies with roles that match what you set above (about 20 seconds)…" }));
+  try {
+    const { suggestions } = await getJSON("/api/search/discover", { method: "POST" });
+    if (!suggestions.length) { box.replaceChildren(el("div", { class: "hint", text: "No new companies with matching roles right now." })); return; }
+    const list = el("div", { class: "checks", style: "max-height:260px;overflow:auto;margin-bottom:8px" },
+      suggestions.map((sg) => el("label", { title: sg.sample.join("\n") },
+        el("input", { type: "checkbox", value: JSON.stringify({ kind: sg.kind, name: sg.name }), checked: sg.matching >= 2 }),
+        `${sg.company} · ${sg.matching} matching (${sg.kind})`)));
+    const add = el("button", { class: "btn-sec", style: "width:100%", onclick: async () => {
+      const picked = [...list.querySelectorAll("input:checked")].map((i) => JSON.parse(i.value));
+      if (!picked.length) return;
+      try {
+        await getJSON("/api/search/companies", { method: "POST", body: JSON.stringify({ add: picked }) });
+        await loadPrefs();
+        box.replaceChildren(el("div", { class: "hint", text: `Added ${picked.length} companies. Search now to include them.` }));
+        log(`🧭 Added ${picked.length} companies to the search`, "ok");
+      } catch (e) { toast(e.message, "error"); }
+    } }, "Add selected");
+    box.replaceChildren(el("div", { class: "hint", style: "margin-bottom:6px", text: "Hover a company to see its matching roles." }), list, add);
+  } catch (e) { box.replaceChildren(el("div", { class: "hint", text: "Could not check: " + e.message })); }
+  finally { $("btnDiscover").disabled = false; $("btnDiscover").textContent = "🧭 Suggest more companies"; }
+}
+
+async function saveRole(r, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  log(`✂ Saving "${r.title}" at ${r.company_name} and tailoring…`, "info");
+  try {
+    const p = await getJSON(`/api/search/results/${r.id}/save`, { method: "POST", body: JSON.stringify({ tailor: true, instruction: emphasis() }) });
+    log(p.duplicate ? `Already on the Desk: ${p.title}` : `✅ ${p.company}: ${p.title} (${p.status})`, p.duplicate ? "warn" : "ok");
+    toast(p.duplicate ? "Already on the Desk" : `Saved and ${p.status}: ${p.title}`, "success");
+  } catch (e) { toast(e.message, "error"); log("Save failed: " + e.message, "fail"); }
+  await Promise.all([loadFind(), refresh(true)]);
+}
+
+async function saveTop() {
+  const top = findRows.filter((r) => !r.desk_id && !r.dismissed).slice(0, 5);
+  if (!top.length) { toast("Nothing to save: run a search first", "error"); return; }
+  $("btnSaveTop").disabled = true;
+  for (const [i, r] of top.entries()) { $("btnSaveTop").textContent = `Saving ${i + 1} of ${top.length}…`; await saveRole(r); }
+  $("btnSaveTop").disabled = false; $("btnSaveTop").textContent = "✂ Save top 5";
+}
+
+async function dismissRole(r) {
+  try { await api(`/api/search/results/${r.id}/dismiss`, { method: "POST" }); log(`Dismissed ${r.company_name}: ${r.title}`, "warn"); }
+  catch (e) { toast(e.message, "error"); }
+  loadFind();
+}
+async function restoreRole(r) {
+  try { await api(`/api/search/results/${r.id}/restore`, { method: "POST" }); } catch (e) { toast(e.message, "error"); }
+  loadFind();
+}
+
+// ── My info ──────────────────────────────────────────────────────────────────
+const ME_FIELDS = { address: "mAddress", city: "mCity", state: "mState", postal_code: "mPostal", country: "mCountry",
+                    phone_type: "mPhoneType", how_heard: "mHowHeard", available_start: "mStart", preferred_name: "mPreferred", github_url: "mGithub",
+                    gpa: "mGpa", high_school_year: "mHsYear", languages: "mLanguages", interviewed_at: "mInterviewed",
+                    relatives_at: "mRelatives", government_official: "mGov", conflict_of_interest: "mConflict" };
+async function loadMe() {
+  const me = await getJSON("/api/desk/me");
+  for (const [k, id] of Object.entries(ME_FIELDS)) $(id).value = me.mine[k] || "";
+  const r = me.from_resume;
+  $("meResume").textContent = [r.name, r.email, r.phone, r.linkedin, r.portfolio].filter(Boolean).join("\n");
+}
+async function saveMe() {
+  const body = Object.fromEntries(Object.entries(ME_FIELDS).map(([k, id]) => [k, $(id).value.trim()]));
+  try { await getJSON("/api/desk/me", { method: "PUT", body: JSON.stringify(body) }); toast("Saved. The next Fill uses it.", "success");
+        log("My info saved", "ok"); }
+  catch (e) { toast(e.message, "error"); }
+}
+
+// ── Wordings ─────────────────────────────────────────────────────────────────
+async function loadAiWords() {
+  const ai = await getJSON("/api/ai-wordings");
+  const head = $("aiHead"); head.textContent = "";
+  const list = $("aiList"); list.textContent = "";
+  const used = ai.items.filter((x) => x.status === "auto" && !x.problem).length;
+  const rejected = ai.items.filter((x) => x.status === "rejected").length;
+  head.append(el("span", { class: "chip" + (ai.enabled ? " on" : ""), text: ai.enabled ? "On" : "Off" }),
+    el("span", { style: "color:var(--txt2)", text: `${used} in use · ${rejected} rejected` +
+      (ai.missing ? ` · ${ai.missing} not written yet` : "") + (ai.running ? " · writing now..." : "") }));
+  const toggle = el("button", { class: "btn-sec", text: ai.enabled ? "Turn off" : "Turn on" });
+  toggle.addEventListener("click", async () => {
+    await getJSON("/api/ai-wordings/settings", { method: "POST", body: JSON.stringify({ enabled: !ai.enabled }) });
+    toast(ai.enabled ? "AI wordings off: tailoring uses your own wordings" : "AI wordings on", "success"); loadAiWords();
+  });
+  head.append(toggle);
+  if (ai.available && ai.missing && !ai.running) {
+    const go = el("button", { class: "btn-sec", text: `Write the ${ai.missing} missing now` });
+    go.addEventListener("click", async () => {
+      try { const r = await getJSON("/api/ai-wordings/refresh", { method: "POST" });
+            toast(r.started ? "Writing in the background (about half a minute each)" : "Already writing", "success"); loadAiWords(); }
+      catch (e) { toast(e.message, "error"); }
+    });
+    head.append(go);
+  }
+  const groups = new Map();
+  for (const it of ai.items) { if (!groups.has(it.original)) groups.set(it.original, []); groups.get(it.original).push(it); }
+  for (const [original, items] of groups) {
+    const box = el("div", { style: "padding:8px 0;border-top:1px solid var(--border)" },
+      el("div", { style: "color:var(--txt2);font-size:12px;margin-bottom:4px", text: "Yours: " + original.replace(/\*\*/g, "") }));
+    for (const it of items) {
+      const off = it.status === "rejected";
+      const row = el("div", { style: "display:flex;gap:10px;align-items:flex-start;padding:4px 0" },
+        el("span", { class: "chip" + (off ? "" : " on"), text: it.term.toLowerCase(), style: "flex-shrink:0" }),
+        el("div", { style: "flex:1;" + (off ? "opacity:.45;text-decoration:line-through" : ""),
+                    text: it.text.replace(/\*\*/g, "") + (it.problem ? `  (not used: ${it.problem})` : "") }));
+      const btn = el("button", { class: "btn-sec", text: off ? "Use again" : "Reject" });
+      btn.addEventListener("click", async () => {
+        try { await getJSON("/api/ai-wordings/decide", { method: "POST",
+                body: JSON.stringify({ original: it.original, term: it.term, status: off ? "auto" : "rejected" }) });
+              toast(off ? "Back in use" : "Rejected: never used", "success"); loadAiWords(); }
+        catch (e) { toast(e.message, "error"); }
+      });
+      row.append(btn); box.append(row);
+    }
+    list.append(box);
+  }
+  if (!ai.items.length) list.append(el("div", { style: "color:var(--txt2)", text: "None yet." }));
+}
+
+async function loadWords() {
+  loadAiWords().catch((e) => log("Could not load AI wordings: " + e.message, "fail"));
+  const bank = await getJSON("/api/bank");
+  const list = $("wordsList"); list.textContent = "";
+  let pending = 0;
+  const skills = $("mySkills"); skills.textContent = "";
+  if (!bank.confirmed_skills.length) skills.append(el("span", { class: "chip", text: "none yet" }));
+  for (const name of bank.confirmed_skills) {
+    const c = el("button", { class: "chip", text: name + "  ✕", title: "Remove: tailoring stops adding it" });
+    c.addEventListener("click", async () => {
+      if (!confirm(`Remove "${name}" from your confirmed skills?`)) return;
+      await getJSON("/api/skills/confirm", { method: "POST", body: JSON.stringify({ name, remove: true }) });
+      toast("Removed " + name); loadWords();
+    });
+    skills.append(c);
+  }
+  const order = (v) => ({ proposed: 0, approved: 1, rejected: 2 }[v.status] ?? 3);
+  for (const b of bank.bullets) {
+    const vs = b.variants.slice().sort((a, c) => order(a) - order(c));
+    pending += vs.filter((v) => v.status === "proposed").length;
+    const body = el("div", { class: "card-body" },
+      el("div", { class: "sb-label", text: (b.entry + " · " + b.role).slice(0, 90) }),
+      el("div", { style: "color:var(--txt2);margin-bottom:10px", text: "Your original: " + b.original.replace(/\*\*/g, "") }));
+    for (const v of vs) {
+      const row = el("div", { style: "display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)" },
+        el("span", { class: "chip" + (v.status === "approved" ? " on" : ""), text: v.angle || "wording", style: "flex-shrink:0" }),
+        el("div", { style: "flex:1;" + (v.status === "rejected" ? "opacity:.45;text-decoration:line-through" : ""), text: v.text.replace(/\*\*/g, "") }));
+      const act = el("div", { style: "display:flex;gap:6px;flex-shrink:0" });
+      for (const [label, status] of [["Approve", "approved"], ["Reject", "rejected"]]) {
+        if (v.status === status) { act.append(el("span", { class: "chip", text: status })); continue; }
+        const btn = el("button", { class: "btn-sec", text: label });
+        btn.addEventListener("click", async () => {
+          try { await getJSON("/api/bank/decide", { method: "POST", body: JSON.stringify({ original: b.original, text: v.text, status }) });
+                toast(status === "approved" ? "Approved: tailoring may use it" : "Rejected", "success"); loadWords(); }
+          catch (e) { toast(e.message, "error"); }
+        });
+        act.append(btn);
+      }
+      row.append(act); body.append(row);
+    }
+    list.append(el("div", { class: "card" }, body));
+  }
+  $("tbWords").textContent = pending;
+}
+
+// ── Wiring ───────────────────────────────────────────────────────────────────
+document.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+$("fileInput").addEventListener("change", (e) => e.target.files.length && addPdfs(e.target.files));
+const zone = $("uploadZone");
+zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
+zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("drag"); if (e.dataTransfer.files.length) addPdfs(e.dataTransfer.files); });
+$("btnLinks").addEventListener("click", addLinks);
+$("btnRefresh").addEventListener("click", () => refresh());
+$("btnPreview").addEventListener("click", () => { if (selected) openPreview(selected); else if (postings[0]) openPreview(postings[0].id); else toast("Add a posting first", "error"); });
+$("btnTailorAll").addEventListener("click", tailorAll);
+$("btnApplyAll").addEventListener("click", startApplying);
+// ── Network: people to ask for a referral ───────────────────────────────────
+async function copyText(t, what) {
+  try { await navigator.clipboard.writeText(t); toast((what || "Copied") + " to the clipboard", "success"); }
+  catch (_) { toast("Could not copy: select the text and copy it", "error"); }
+}
+const STATUS_LIST = ["to contact", "messaged", "replied", "referred", "no reply", "not a fit"];
+function tieChips(ties) {
+  return (ties || []).map((t) => el("span", { class: "netchip tie", text: t }));
+}
+function contactRow(c, opts = {}) {
+  const status = el("select", { title: "Where this conversation stands", onchange: async (e) => {
+    try { await getJSON(`/api/network/contacts/${c.id}`, { method: "PATCH", body: JSON.stringify({ status: e.target.value }) });
+      toast(e.target.value === "messaged" ? "Marked messaged: a follow-up reminder comes in 5 days if there is no reply" : "Saved", "success");
+      if (opts.refresh) opts.refresh(); }
+    catch (err) { toast(err.message, "error"); } } },
+    STATUS_LIST.map((s) => el("option", { value: s, selected: s === c.status, text: s })));
+  const draftBtn = el("button", { class: "btn-sec", title: "The message that fits this person, with their first name", onclick: async () => {
+    try {
+      const d = await getJSON(`/api/network/contacts/${c.id}/draft`);
+      const box = el("div", { style: "margin-top:6px" },
+        el("div", { class: "hint", text: `${d.label} · connection note (${d.note.length}/300)` }),
+        el("textarea", { rows: 3, style: "width:100%" }, d.note),
+        el("button", { class: "btn-sec", onclick: () => copyText(d.note, "Note") }, "Copy note"),
+        el("div", { class: "hint", text: "Longer message / email" }),
+        el("textarea", { rows: 8, style: "width:100%" }, d.message),
+        el("button", { class: "btn-sec", onclick: () => copyText(d.message, "Message") }, "Copy message"));
+      row.querySelector(".grow").append(box);
+      draftBtn.disabled = true;
+    } catch (e) { toast(e.message, "error"); } } }, "✉ Draft");
+  const del = el("button", { class: "icon-btn del", title: "Remove this contact", onclick: async () => {
+    if (!confirm(`Remove ${c.name || c.email}?`)) return;
+    try { await getJSON(`/api/network/contacts/${c.id}`, { method: "DELETE" }); if (opts.refresh) opts.refresh(); }
+    catch (e) { toast(e.message, "error"); } } }, "✕");
+  const name = c.link ? el("a", { href: c.link, target: "_blank", rel: "noopener noreferrer", text: c.name || c.email }) : el("b", { text: c.name || c.email });
+  const row = el("div", { class: "netrow" },
+    el("div", { class: "grow" },
+      name, c.follow_up_due ? el("span", { class: "netdue", text: "  · follow up" }) : null,
+      el("div", { class: "hint", text: [c.headline, c.location, c.email].filter(Boolean).join(" · ") || "—" }),
+      opts.posting && c.posting ? el("div", { class: "hint", text: `for ${c.posting.company}: ${c.posting.title}` }) : null,
+      el("div", {}, tieChips(c.ties)),
+      c.notes ? el("div", { class: "hint", text: c.notes }) : null),
+    el("div", { style: "text-align:right;white-space:nowrap" },
+      el("div", { class: "hint", text: "score " + (c.score ?? 0) }), status, el("div", { style: "margin-top:4px" }, draftBtn, del)));
+  return row;
+}
+function addContactForm(pid, after) {
+  const f = {};
+  const inp = (k, ph) => (f[k] = el("input", { type: "text", placeholder: ph, autocomplete: "off" }));
+  const form = el("div", {},
+    el("div", { class: "netform" },
+      inp("name", "Name"), inp("location", "Their city (e.g. San Francisco Bay Area)"),
+      inp("headline", "Headline / title as shown (e.g. PM at Databricks | State University '22)"), inp("link", "Profile link (paste it)"),
+      inp("email", "Email (optional)"), inp("notes", "Notes: how you found them, what you share")),
+    el("button", { class: "btn-sec", style: "margin-top:6px", onclick: async () => {
+      const body = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.value.trim()]));
+      body.posting_id = pid;
+      if (!body.name && !body.email) { toast("Give at least a name or an email", "error"); return; }
+      try { await getJSON("/api/network/contacts", { method: "POST", body: JSON.stringify(body) }); toast("Saved: ties found from what you typed", "success"); after(); }
+      catch (e) { toast(e.message, "error"); } } }, "+ Save contact"));
+  return form;
+}
+async function networkCard(pid) {
+  const n = await getJSON(`/api/network/posting/${pid}`);
+  const card = $("netCard");
+  if (!card || selected !== pid) return;
+  const body = el("div", { class: "card-body" });
+  card.replaceChildren(el("div", { class: "card-head" }, el("span", { class: "card-lbl", text: "Network for a referral" }),
+    el("span", { class: "hint", text: "you open the searches and send the messages" }),
+    el("a", { href: "/network#companies/" + encodeURIComponent(n.key || ""), target: "_blank", text: "Full page ↗" })), body);
+  // where the role is: the person's own area first
+  body.append(el("div", {}, el("b", { text: "Role offices: " }),
+    n.focus.length ? n.focus.map((pl, i) => el("span", { class: "netchip" + (i === 0 ? " home" : ""), text: pl + (i === 0 ? " (focus)" : "") })) : el("span", { class: "hint", text: "not stated in the posting" })));
+  // the recruiter the posting names
+  for (const pc of n.posting_contacts) {
+    body.append(el("div", { class: "netrow" },
+      el("div", { class: "grow" }, el("b", { text: pc.name || pc.title }), el("div", { class: "hint", text: [pc.title, pc.email, pc.source].filter(Boolean).join(" · ") })),
+      el("div", {}, pc.email ? el("button", { class: "btn-sec", onclick: () => copyText(pc.email, "Email") }, "Copy email") : null,
+        el("button", { class: "btn-sec", onclick: async () => {
+          try { await getJSON("/api/network/contacts", { method: "POST", body: JSON.stringify({ posting_id: pid, name: pc.name, headline: pc.title, email: pc.email, notes: "named on the posting" }) });
+            toast("Saved", "success"); networkCard(pid); } catch (e) { toast(e.message, "error"); } } }, "+ Save"))));
+  }
+  // searches, strongest first
+  let group = "";
+  const list = el("div", {});
+  for (const s of n.searches) {
+    if (s.group !== group) { group = s.group; list.append(el("div", { class: "netgroup", text: group })); }
+    list.append(el("div", { class: "netrow" },
+      el("div", { class: "grow" }, el("div", { text: s.label }), el("div", { class: "hint", text: s.why })),
+      el("a", { class: "btn-sec", href: s.url, target: "_blank", rel: "noopener noreferrer", style: "text-decoration:none;white-space:nowrap" }, "Open ↗")));
+  }
+  body.append(el("details", { open: true, style: "margin-top:10px" }, el("summary", { text: `Searches (${n.searches.length}), strongest first` }), list));
+  // drafts
+  const sel = el("select", {}, n.drafts.map((d, i) => el("option", { value: i, text: d.label })));
+  const note = el("textarea", { rows: 3, style: "width:100%" });
+  const msg = el("textarea", { rows: 9, style: "width:100%" });
+  const count = el("span", { class: "hint" });
+  const show = () => { const d = n.drafts[+sel.value]; note.value = d.note; msg.value = d.message; count.textContent = `${d.note.length}/300 characters · replace {first_name}`; };
+  sel.addEventListener("change", show); show();
+  body.append(el("details", { style: "margin-top:10px" }, el("summary", { text: "Message drafts" }),
+    el("div", { style: "margin-top:6px" }, sel, " ", count),
+    el("div", { class: "hint", text: "Connection note (LinkedIn allows 300 characters)" }), note,
+    el("button", { class: "btn-sec", onclick: () => copyText(note.value, "Note") }, "Copy note"),
+    el("div", { class: "hint", text: "Longer message / email" }), msg,
+    el("button", { class: "btn-sec", onclick: () => copyText(msg.value, "Message") }, "Copy message")));
+  // the person's saved contacts for this posting
+  const mine = el("div", {}, n.contacts.length ? n.contacts.map((c) => contactRow(c, { refresh: () => networkCard(pid) }))
+    : el("div", { class: "hint", text: "No one saved yet. Open a search, then save the people you want to reach." }));
+  body.append(el("details", { open: true, style: "margin-top:10px" }, el("summary", { text: `Your contacts for this role (${n.contacts.length})` }),
+    mine, addContactForm(pid, () => { networkCard(pid); loadNetwork(true); })));
+}
+async function loadNetwork(quiet) {
+  try {
+    const r = await getJSON("/api/network/contacts");
+    $("tbNetwork").textContent = r.contacts.length;
+    const box = $("netAll");
+    if (!r.contacts.length) { box.replaceChildren(el("div", { class: "hint", text: "No contacts yet. Open a posting in Preview: its Network card has the searches and a form to save people." })); return; }
+    box.replaceChildren(
+      r.due ? el("div", { class: "notice warn", text: `${r.due} follow-up${r.due > 1 ? "s" : ""} due: messaged 5+ days ago, no reply yet.` }) : null,
+      ...r.contacts.map((c) => contactRow(c, { posting: true, refresh: () => loadNetwork(true) })));
+  } catch (e) { if (!quiet) toast("Network: " + e.message, "error"); }
+}
+document.querySelector('.tab[data-tab="network"]').addEventListener("click", () => loadNetwork());
+loadNetwork(true);
+
+$("search").addEventListener("input", render);
+$("stageFilter").addEventListener("change", render);
+$("btnSavePrefs").addEventListener("click", savePrefs);
+$("btnSaveMe").addEventListener("click", saveMe);
+$("btnTracker").addEventListener("click", downloadTracker);
+$("btnExtension").addEventListener("click", downloadExtension);
+$("btnDiscover").addEventListener("click", discoverCompanies);
+$("btnSearch").addEventListener("click", runSearch);
+$("btnSaveTop").addEventListener("click", saveTop);
+$("showFilter").addEventListener("change", loadFind);
+$("findSearch").addEventListener("input", renderFind);
+$("emphasis").addEventListener("input", () => {
+  store("desk_emphasis", emphasis());
+  document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c.dataset.ask === emphasis()));
+});
+document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => {
+  $("emphasis").value = emphasis() === c.dataset.ask ? "" : c.dataset.ask;
+  $("emphasis").dispatchEvent(new Event("input"));
+}));
+
+(async () => {
+  $("emphasis").value = recall("desk_emphasis") || "";
+  $("emphasis").dispatchEvent(new Event("input"));
+  if (await checkServer()) {
+    await refresh();
+    loadPrefs().catch((e) => log("Could not load search preferences: " + e.message, "fail"));
+    loadMe().catch((e) => log("Could not load My info: " + e.message, "fail"));
+    loadWords().catch((e) => log("Could not load wordings: " + e.message, "fail"));
+    loadFind();
+    if (await searchStatus().catch(() => false)) runSearchPollOnly();
+    getJSON("/api/search/status").then((st) => { if (!st.last) $("prefsBox").open = true; }).catch(() => {});
+    const s = recall("desk_selected");
+    if (s && postings.some((p) => p.id === s)) { selected = s; render(); }
+    const tab = location.hash === "#find" ? "find" : location.hash === "#network" ? "network" : recall("desk_tab");
+    if (tab === "network") loadNetwork(true);
+    if (tab === "preview" && selected) openPreview(selected); else if (tab && tab !== "preview") switchTab(tab);
+  }
+  setInterval(checkServer, 15000);
+  setInterval(() => { if (!busy) refresh(true); }, 30000);
+  setInterval(() => { searchStatus().catch(() => {}); }, 60000);  // a daily search started by the server shows up  // postings saved from the extension appear on their own
+})();
+</script>
+</body>
+</html>
