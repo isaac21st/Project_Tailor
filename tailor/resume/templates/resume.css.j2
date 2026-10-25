@@ -1,0 +1,54 @@
+/* Fixed-layout resume. Every spacing value below is a constant: the text never
+   changes how far apart things are, only how much blank space is left at the
+   bottom of the page. Values mirror the Word version (Times New Roman 10.5 pt,
+   Letter, 0.5in side margins). */
+
+@font-face { font-family: "Tinos"; font-weight: 400; font-style: normal;  src: url("{{ fonts_uri }}/Tinos-Regular.ttf"); }
+@font-face { font-family: "Tinos"; font-weight: 700; font-style: normal;  src: url("{{ fonts_uri }}/Tinos-Bold.ttf"); }
+@font-face { font-family: "Tinos"; font-weight: 400; font-style: italic;  src: url("{{ fonts_uri }}/Tinos-Italic.ttf"); }
+@font-face { font-family: "Tinos"; font-weight: 700; font-style: italic;  src: url("{{ fonts_uri }}/Tinos-BoldItalic.ttf"); }
+
+@page { size: 8.5in 11in; margin: {{ m.top }}in {{ m.right }}in {{ m.bottom }}in {{ m.left }}in; }
+
+:root { --lh: 12.07pt; }  /* Times single spacing at 10.5 pt: 10.5 * 1.1499 */
+
+html, body { margin: 0; padding: 0; background: #fff; }
+body {
+  font-family: "Tinos", serif;
+  font-size: 10.5pt;
+  line-height: var(--lh);
+  color: #000;
+  font-kerning: none;               /* Word does not kern; matches its line breaks */
+  font-variant-ligatures: none;     /* keeps "fi"/"fl" as plain letters for ATS text extraction */
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.page { width: 7.5in; }
+
+a { color: #0563c1; text-decoration: underline; }
+strong { font-weight: 700; }
+em { font-style: italic; }
+
+h1.name { margin: 0; padding: 0; font-size: 18pt; line-height: 1.1499; font-weight: 700; text-align: center; }
+.contact { padding: 1pt 0; text-align: center; }
+.summary { margin: 0; padding: 3pt 0 0; text-align: left; }
+
+.section > h2 { margin: 0; padding: 4.5pt 0 1pt; font-size: 10.5pt; line-height: var(--lh); font-weight: 700; }
+
+.row { display: flex; justify-content: space-between; align-items: baseline; }
+.entry-head { padding-top: 1.5pt; font-weight: 700; }
+.entry-head .where, .row .when { white-space: nowrap; padding-left: 0.15in; }
+.role-row { font-style: italic; }
+
+/* Bullets are inline (hanging indent), never positioned: browsers paint positioned
+   elements in a later pass, which scrambles the text order an ATS reads. */
+ul.bullets { list-style: none; margin: 0; padding: 0; }
+ul.bullets li { margin: 0; padding-left: 0.25in; text-indent: -0.16in; }
+ul.bullets li::before {
+  content: "\25CF";                 /* ● at 8 pt, as in the Word version */
+  display: inline-block; width: 0.16in; text-indent: 0;
+  font-size: 8pt; line-height: 1;   /* small box so it cannot grow the line */
+  font-style: normal; font-weight: 400;
+}
+
+.line { margin: 0; padding: 0; }
+.line .label { font-weight: 700; }

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ resume.header.name }} - Resume</title>
+<style>
+{{ css }}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1 class="name">{{ resume.header.name }}</h1>
+  <div class="contact">
+    {%- for c in resume.header.contact -%}
+      {%- if not loop.first %} | {% endif -%}
+      {%- if c.url %}<a href="{{ c.url }}">{{ c.text }}</a>{% else %}{{ c.text }}{% endif -%}
+    {%- endfor -%}
+  </div>
+  {% if resume.summary %}<p class="summary">{{ resume.summary | inline }}</p>{% endif %}
+
+  {% for s in resume.sections %}
+  <div class="section">
+    <h2>{{ s.heading }}</h2>
+    {% for e in s.entries %}
+    <div class="entry">
+      <div class="row entry-head">
+        <span class="what">{{ e.title }}{% if e.link %} | <a href="{{ e.link.url }}">{{ e.link.text }}</a>{% endif %}</span>
+        <span class="where">{{ e.location }}</span>
+      </div>
+      {% for r in e.roles %}
+      <div class="row role-row{% if not loop.first %} extra{% endif %}">
+        <span class="role">{{ r.title }}</span><span class="when">{{ r.dates }}</span>
+      </div>
+      {% if r.bullets %}
+      <ul class="bullets">
+        {% for b in r.bullets %}<li>{{ b | inline }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+    {% for l in s.lines %}
+    <div class="line"><span class="label">{{ l.label }}:</span> {{ l.text | inline }}</div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+</body>
+</html>
