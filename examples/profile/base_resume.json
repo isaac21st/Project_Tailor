@@ -1,0 +1,164 @@
+{
+  "header": {
+    "name": "Jordan Rivera",
+    "contact": [
+      {
+        "text": "jordan@example.com",
+        "url": "mailto:jordan@example.com"
+      },
+      {
+        "text": "(555) 010-2000"
+      },
+      {
+        "text": "linkedin.com/in/jordanrivera-example",
+        "url": "https://www.linkedin.com/in/jordanrivera-example"
+      },
+      {
+        "text": "jordanrivera.example",
+        "url": "https://jordanrivera.example/"
+      }
+    ]
+  },
+  "summary": null,
+  "sections": [
+    {
+      "heading": "EDUCATION",
+      "entries": [
+        {
+          "title": "Lakeview University, Harbor School of Business",
+          "location": "Lakeview, OH",
+          "roles": [
+            {
+              "title": "Master of Business Administration",
+              "dates": "Expected May 2027",
+              "bullets": [
+                "Focus: product management and operations; Product Club VP of Events"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Lakeview University School of Information",
+          "location": "Lakeview, OH",
+          "roles": [
+            {
+              "title": "Master of Science in Information",
+              "dates": "Expected May 2027",
+              "bullets": [
+                "Coursework: user research methods, data visualization, SQL for analytics"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "State University",
+          "location": "Riverton, CA",
+          "roles": [
+            {
+              "title": "Bachelor of Arts in History",
+              "dates": "June 2021",
+              "bullets": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "PROFESSIONAL EXPERIENCE",
+      "entries": [
+        {
+          "title": "BRIGHTPATH CLINICS",
+          "location": "Riverton, CA",
+          "roles": [
+            {
+              "title": "Operations Analyst",
+              "dates": "July 2021 - July 2025",
+              "bullets": [
+                "Built a weekly **Tableau** dashboard tracking intake and staffing across 6 clinics, cutting scheduling gaps by 18%",
+                "Interviewed 25 clinicians to map the intake process and proposed 3 workflow changes the leadership team adopted",
+                "Coordinated a 4-person team to move patient scheduling to a new system with no missed appointments in the switch"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "ACME RENTAL GROUP",
+          "location": "Riverton, CA",
+          "roles": [
+            {
+              "title": "Sales Associate",
+              "dates": "June 2019 - June 2021",
+              "bullets": [
+                "Grew add-on sales 12% at a busy counter by recommending options that fit each customer's trip",
+                "Trained 5 new associates on the booking system and customer service standards"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "PROJECT EXPERIENCE",
+      "entries": [
+        {
+          "title": "CITY TRANSIT RIDERSHIP STUDY",
+          "location": "Lakeview, OH",
+          "roles": [
+            {
+              "title": "Data Lead, 4-person student team",
+              "dates": "February 2026 - April 2026",
+              "bullets": [
+                "Analyzed 2 years of public ridership data in **Python** (Pandas) to find the 5 routes with the steepest decline",
+                "Presented route recommendations to city planning staff, who added 2 of them to the next service review"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "CAMPUS FOOD PANTRY APP PROTOTYPE",
+          "location": "Lakeview, OH",
+          "roles": [
+            {
+              "title": "Product Designer",
+              "dates": "October 2025 - December 2025",
+              "bullets": [
+                "Ran 12 user interviews and turned the findings into personas and a clickable **Figma** prototype",
+                "Tested the prototype with 8 students; fixed the 3 biggest usability issues before handing it to the pantry"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "RETAIL PRICING CASE COMPETITION",
+          "location": "Lakeview, OH",
+          "roles": [
+            {
+              "title": "Team Member, 3-person team",
+              "dates": "January 2026",
+              "bullets": [
+                "Built a pricing model in **Excel** for a regional grocer and placed second of 14 teams"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "SKILLS",
+      "lines": [
+        {
+          "label": "Product & Strategy",
+          "text": "Product requirements, roadmapping, market sizing, stakeholder presentations"
+        },
+        {
+          "label": "Analytics",
+          "text": "SQL, Python (Pandas), Tableau, Excel"
+        },
+        {
+          "label": "Research & Design",
+          "text": "User interviews, personas, usability testing, Figma"
+        }
+      ]
+    }
+  ]
+}

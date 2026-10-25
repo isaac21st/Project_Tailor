@@ -1,0 +1,21 @@
+{
+  "_about": "Answers to questions that come up on every application. Empty means Tailor leaves the question to you.",
+  "work_authorization_us": "",
+  "sponsorship_us": "",
+  "us_citizen": "",
+  "us_answers_for_us_roles": true,
+  "background_check_ok": "",
+  "relocation_ok_cities": [
+    "San Francisco",
+    "New York"
+  ],
+  "in_person_max_percent": 100,
+  "gender": "",
+  "pronouns": "",
+  "transgender": "",
+  "hispanic_latino": "",
+  "race": "",
+  "veteran": "",
+  "disability": "",
+  "disability_detail": ""
+}

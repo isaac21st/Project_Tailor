@@ -1,0 +1,57 @@
+{
+  "_about": "Your preferences. See PREFERENCES.md for every key. Delete the keys you do not need.",
+  "extras": {
+    "country": "United States",
+    "city": "Riverton",
+    "state": "California",
+    "postal_code": "00000",
+    "address": "123 Example Street",
+    "phone_type": "Mobile",
+    "how_heard": "Company website",
+    "location_preferences": [
+      "San Francisco",
+      "New York",
+      "Remote"
+    ],
+    "available_start": "2027-06-01",
+    "gpa": "3.7",
+    "education_gpas": {
+      "State University": "3.4"
+    }
+  },
+  "education_order": [
+    "School of Information",
+    "Harbor School of Business",
+    "State University"
+  ],
+  "education_starts": {
+    "Lakeview University, Harbor School of Business": "2025-08",
+    "Lakeview University School of Information": "2024-08",
+    "State University": "2017-09"
+  },
+  "fields_of_study": {
+    "Harbor School of Business": "Business Administration",
+    "School of Information": "Information Science",
+    "State University": "History"
+  },
+  "name_overrides": {
+    "BRIGHTPATH CLINICS": "Brightpath Clinics",
+    "ACME RENTAL GROUP": "Acme Rental Group"
+  },
+  "confirmed_skills": [
+    "A/B testing",
+    "Jira"
+  ],
+  "resume_summary": false,
+  "network_ties": [
+    {
+      "label": "Product Club",
+      "kind": "club",
+      "search": "Product Club Harbor",
+      "weight": 1.6,
+      "words": [
+        "product club"
+      ]
+    }
+  ]
+}

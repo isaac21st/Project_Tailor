@@ -1,0 +1,35 @@
+{
+  "_about": "Optional. Your own rules for tailoring: see the top of tailor/resume/rules.py.",
+  "protect": [],
+  "approved_rewrites": [
+    [
+      "Grew add-on sales 12% at a busy counter",
+      "Grew add-on sales 12% at a high-volume counter"
+    ]
+  ],
+  "reframes": [
+    {
+      "when": "\\bdashboards?\\b",
+      "old": "a weekly **Tableau** dashboard",
+      "new": "a weekly **Tableau** reporting dashboard"
+    }
+  ],
+  "shortenings": [
+    {
+      "id": "skills_short",
+      "label": "shortened the Product & Strategy skills line",
+      "where": "skills",
+      "find": "market sizing, ",
+      "replace": "",
+      "cost": 1.5,
+      "costlier_when": "market sizing",
+      "per_mention": 4,
+      "max_mentions": 2
+    }
+  ],
+  "education_first": {
+    "degree": "Master of Science",
+    "label": "MS in Information",
+    "reason": "my order"
+  }
+}
