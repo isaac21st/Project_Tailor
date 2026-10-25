@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tailor Assist options</title>
+<style>
+  body { max-width: 640px; margin: 24px auto; padding: 0 16px; font: 14px/1.5 system-ui, sans-serif; color: #111; }
+  h1 { font-size: 20px; } h2 { font-size: 15px; margin: 26px 0 8px; }
+  label { display: block; margin: 10px 0 4px; font-weight: 600; }
+  input[type=text], input[type=password] { width: 100%; padding: 8px; border: 1px solid #c7c7d1; border-radius: 8px; box-sizing: border-box; font: inherit; }
+  button { padding: 7px 12px; margin: 6px 6px 0 0; border: 1px solid #4f46e5; background: #4f46e5; color: #fff; border-radius: 8px; cursor: pointer; font: inherit; }
+  button.secondary { background: #fff; color: #4f46e5; }
+  .hint { color: #555; font-size: 12.5px; } .msg { margin-top: 6px; font-size: 13px; min-height: 1.3em; } .err { color: #b91c1c; } .good { color: #15803d; }
+  .slot { border: 1px solid #e0e0e8; border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>Tailor Assist</h1>
+
+  <h2>Connection</h2>
+  <label for="url">Local server address</label>
+  <input type="text" id="url" value="http://127.0.0.1:8765">
+  <label for="token">Access token</label>
+  <input type="password" id="token" placeholder="Paste the token from the server (see server_token.txt)">
+  <div class="hint">Stays in this browser's extension storage. Web pages cannot read it.</div>
+  <button id="save">Save</button><button id="check" class="secondary">Test connection</button>
+  <div class="msg" id="connMsg"></div>
+
+  <h2>Alert sounds</h2>
+  <div class="hint">Upload any audio file, up to 30 seconds (a song clip works). Leave empty to use the built-in beeps.</div>
+  <div class="slot">
+    <strong>Needs you</strong> <span class="hint">(login, unknown field, review, ready to submit; repeats every minute until you click on the page)</span>
+    <div><input type="file" id="file_needs_you" accept="audio/*"></div>
+    <button class="secondary" id="test_needs_you">Test</button><button class="secondary" id="clear_needs_you">Use built-in</button>
+    <div class="msg" id="msg_needs_you"></div>
+  </div>
+  <div class="slot">
+    <strong>Done</strong> <span class="hint">(everything filled, nothing left for you)</span>
+    <div><input type="file" id="file_done" accept="audio/*"></div>
+    <button class="secondary" id="test_done">Test</button><button class="secondary" id="clear_done">Use built-in</button>
+    <div class="msg" id="msg_done"></div>
+  </div>
+  <label for="volume">Volume</label>
+  <input type="range" id="volume" min="0" max="1" step="0.05" value="1">
+  <script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tailor Assist</title>
+<style>
+  body { width: 280px; margin: 0; padding: 14px; font: 13px/1.45 system-ui, sans-serif; color: #111; }
+  h1 { margin: 0 0 8px; font-size: 15px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #9ca3af; margin-right: 6px; }
+  .ok { background: #16a34a; } .bad { background: #dc2626; }
+  button { width: 100%; margin-top: 10px; padding: 8px; border: 0; border-radius: 8px; background: #4f46e5; color: #fff; font: inherit; cursor: pointer; }
+  button.secondary { background: #fff; color: #4f46e5; border: 1px solid #4f46e5; }
+  .note { margin-top: 10px; font-size: 11.5px; color: #555; }
+</style>
+</head>
+<body>
+  <h1>Tailor Assist</h1>
+  <div><span id="dot" class="dot"></span><span id="state">Checking the local server...</span></div>
+  <button id="allow" style="display:none">Allow on job sites</button>
+  <div class="note" id="allownote" style="display:none">Chrome is holding Tailor Assist back on job sites ("On click"), so
+    it cannot fill. Allow it once for the application sites (Workday, Greenhouse, Lever, Ashby, iCIMS, SmartRecruiters,
+    Taleo, Oracle, SuccessFactors and more). On any other site, Fill this page works on click.</div>
+  <button id="fill">Fill this page</button>
+  <button id="save" class="secondary">Save posting to Desk</button>
+  <button id="desk" class="secondary">Open Tailor Desk</button>
+  <button id="find" class="secondary">Find roles for me</button>
+  <div class="note" id="savenote"></div>
+  <button id="options" class="secondary">Options (token, sounds)</button>
+  <div class="note">Fills from your profile and drafts free-text answers locally. You review and click Submit yourself.</div>
+  <script src="popup.js"></script>
+</body>
+</html>

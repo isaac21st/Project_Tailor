@@ -1,0 +1,8 @@
+/* Highlights applied to the page's own fields. Green = filled from your profile, amber = model draft to review,
+   red = needs you. Outlines only, so the site's layout is never changed. The data-tailor attribute carries the same
+   mark for React sites, which rewrite class lists (Greenhouse's dropdowns). ":not(#tailor-x)" raises the rules above
+   a site's own class rules: Greenhouse sets "outline" on its dropdown box with !important too, and loads later. */
+.tailor-filled:not(#tailor-x), [data-tailor="filled"]:not(#tailor-x) { outline: 2px solid #16a34a !important; outline-offset: 1px !important; }
+.tailor-drafting:not(#tailor-x), [data-tailor="drafting"]:not(#tailor-x) { outline: 2px dashed #d97706 !important; outline-offset: 1px !important; }
+.tailor-draft:not(#tailor-x), [data-tailor="draft"]:not(#tailor-x) { outline: 2px solid #d97706 !important; outline-offset: 1px !important; background-color: #fffbeb !important; }
+.tailor-needs:not(#tailor-x), [data-tailor="needs"]:not(#tailor-x) { outline: 2px solid #dc2626 !important; outline-offset: 1px !important; background-color: #fef2f2 !important; }
