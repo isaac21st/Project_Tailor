@@ -30,6 +30,7 @@ from ..jobs import clean_job_text, extract_facts
 from ..jobs.text import CleanJob
 from .keywords import VOCAB, Keywords, _title_hit, extract_keywords, headline_title, past, resume_text, score
 from .render import MARGINS, PAGE_HEIGHT_IN, PX_PER_IN, _FONT_FACES, _MEASURE_JS, build_html, render_resume
+from .career import best_track, emphasized, load_career
 from .rewrite import check_bullet, qualifications, rewrite_resume
 from .rules import NO_RULES, TailoringRules, load_rules
 from .schema import Entry, LabeledLine, Resume, Section
@@ -295,6 +296,14 @@ def _short(title: str) -> str:
 
 def _counts(text: str) -> dict[str, int]:
     return {c: len(p.findall(text)) for c, p in CONCEPTS.items()}
+
+
+def _reads_as_a_job(job: CleanJob, title: str, signal: float) -> bool:
+    """The concepts were written around one field; a nursing or engineering posting can name few of them, so what the
+    posting itself lists as skills counts too (2026-11-04)."""
+    if signal >= MIN_JOB_SIGNAL:
+        return True
+    return sum(k.kind in ("hard", "industry") for k in extract_keywords(job, title).items) >= 4
 
 
 def job_concepts(job: CleanJob, title: str = "") -> tuple[dict[str, float], float]:
@@ -606,11 +615,13 @@ class Selection:
     job_text: str = ""  # the posting's words: skills it names lead their line
 
 
-def _choose(prepared: Resume, vec: dict[str, float], job: CleanJob) -> Selection:
+def _choose(prepared: Resume, vec: dict[str, float], job: CleanJob, prefer: tuple[str, ...] = ()) -> Selection:
     proj = _proj(prepared)
     scored = []
     for i, e in enumerate(proj.entries if proj else []):
-        scored.append((_relevance(vec, _entry_text(e)) - i * 0.001, e.title))
+        # a project the person's target for this kind of role names leads when it is about as relevant as another
+        lift = 1.15 if any(p.lower() in e.title.lower() for p in prefer) else 1.0
+        scored.append((_relevance(vec, _entry_text(e)) * lift - i * 0.001, e.title))
     scored.sort(key=lambda x: -x[0])
     keep = [t for _, t in scored[:MAX_PROJECTS]]
     dropped = [(t, round(s, 2)) for s, t in scored[MAX_PROJECTS:]]
@@ -875,7 +886,7 @@ def _orphans(pdf: Path) -> list[str]:
 def has_job_description(text: str, title: str = "") -> bool:
     """Whether the text holds a job description to tailor to (the same test tailor_resume uses), not only a form."""
     job = clean_job_text(text or "")
-    return len(job.body_text()) >= MIN_JOB_CHARS and job_concepts(job, title)[1] >= MIN_JOB_SIGNAL
+    return len(job.body_text()) >= MIN_JOB_CHARS and _reads_as_a_job(job, title, job_concepts(job, title)[1])
 
 
 def tailor_resume(base: Resume, job_text: str, *, title: str = "", settings: Settings | None = None,
@@ -935,9 +946,14 @@ def _tailor_once(base: Resume, job_text: str, *, title: str = "", settings: Sett
     body = job.body_text()
     vec, signal = job_concepts(job, title)
     report.concepts = {c: round(v, 2) for c, v in vec.items()}
-    if len(body) < MIN_JOB_CHARS or signal < MIN_JOB_SIGNAL:
+    if len(body) < MIN_JOB_CHARS or not _reads_as_a_job(job, title, signal):
         report.reason = "no job description found on this page"
         return TailorResult(None, report)
+    career = load_career(settings)  # the person's target for this kind of role decides which of their evidence leads
+    prefer: tuple[str, ...] = ()
+    if career is not None:
+        track = best_track(career, title, body[:1500], body)[0]
+        vec, prefer = emphasized(vec, track), tuple(track.evidence) if track else ()
 
     kw = extract_keywords(job, title)
     # "before" is what would have been sent without tailoring: the one-page default resume (the full base resume is
@@ -956,11 +972,11 @@ def _tailor_once(base: Resume, job_text: str, *, title: str = "", settings: Sett
         woven = []
         prepared, rewrites_done = prepare(base, job_text, rewrites=use_rewrites, bank=bank, vec=vec, instruction=instruction,
                                           kw=kw, protect=protect, ai=ai, woven=woven)
-        first_pick = _choose(prepared, vec, job)
+        first_pick = _choose(prepared, vec, job, prefer)
         added = add_keywords(prepared, base, kw, first_pick.skills_order, confirmed) if use_rewrites else []
         if use_summary:
             prepared.summary, summary_terms = build_summary(base, kw, resume_text(prepared))
-        sel = _choose(prepared, vec, job)
+        sel = _choose(prepared, vec, job, prefer)
         report.hard, report.refused = False, []
         if client is not None and use_rewrites:  # the fallback pass (use_rewrites=False) is rules only
             pro = _pro(prepared)
@@ -1027,6 +1043,75 @@ def _tailor_once(base: Resume, job_text: str, *, title: str = "", settings: Sett
                         for e in s.entries for r in e.roles for b in r.bullets)
     report.in_bullets = [k.name for k in kw.items if k.kind in ("hard", "industry") and k.found_in(bullets)]
     return TailorResult(final, report, None)
+
+
+# ----------------------------------------------------------------------------------------- role descriptions (forms)
+
+ROLE_BULLETS = 4
+
+
+def role_descriptions(base: Resume, job_text: str, *, title: str = "", settings: Settings | None = None,
+                      max_bullets: int = ROLE_BULLETS) -> dict[tuple[str, str], list[str]]:
+    """{(entry title, role title): bullets} for an application form's "Role Description" boxes, tailored to the posting
+    (the person, 2026-10-30: "tailor the experience to the job itself, that is what Simplify cannot do"). Each job keeps
+    only its own bullets, in the wordings tailoring would use for this posting (the person's approved re-wordings, the
+    posting's own terms and verbs), the ones that fit the posting best first. A form has room the one-page resume does
+    not, so nothing is cut for space, only for fit. The result passes the same truth check as a tailored resume; a role
+    that would not keeps its own bullets in their own order."""
+    settings = settings or load_settings()
+    rules = load_rules(settings.profile_dir)
+    token = _RULES.set(rules)
+    try:
+        job = clean_job_text(job_text or "")
+        vec, signal = job_concepts(job, title)
+        kw = extract_keywords(job, title) if _reads_as_a_job(job, title, signal) else None
+        prepared = base
+        if kw is not None:
+            prepared, _ = prepare(base, job_text, bank=load_bank(settings, rules.protect), vec=vec, kw=kw,
+                                  protect=rules.protect)
+        out: dict[tuple[str, str], list[str]] = {}
+        for s_base, s_prep in zip(base.sections, prepared.sections):
+            if "EXPERIENCE" not in s_base.heading.upper():
+                continue
+            for e_base, e_prep in zip(s_base.entries, s_prep.entries):
+                for r_base, r_prep in zip(e_base.roles, e_prep.roles):
+                    own = list(r_base.bullets)
+                    ranked = list(r_prep.bullets)
+                    if kw is not None:  # best fit first; equal fits keep the resume's order
+                        order = sorted(range(len(ranked)), key=lambda i: -(_relevance(vec, ranked[i]) + _kw_hits(kw, ranked[i])))
+                        ranked = [ranked[i] for i in order]
+                    trial = copy.deepcopy(base)
+                    trial_role = next(r for sec in trial.sections if sec.heading == s_base.heading
+                                      for en in sec.entries if en.title == e_base.title
+                                      for r in en.roles if r.title == r_base.title)
+                    trial_role.bullets = ranked[:max_bullets]
+                    if errors(check_tailored(base, trial)):
+                        ranked = own
+                    out[(e_base.title, r_base.title)] = [b.replace("**", "") for b in ranked[:max_bullets]]
+        return out
+    finally:
+        _RULES.reset(token)
+
+
+def wanted_skills(base: Resume, job_text: str, *, title: str = "", settings: Settings | None = None,
+                  limit: int = 10) -> list[str]:
+    """The skills the posting asks for most that the person really has (their resume shows them, or they confirmed
+    them), heaviest first: for a form's skills box (Workday's "Type to Add Skills", the person, 2026-10-30)."""
+    settings = settings or load_settings()
+    job = clean_job_text(job_text or "")
+    _, signal = job_concepts(job, title)
+    if not _reads_as_a_job(job, title, signal):
+        return []
+    kw = extract_keywords(job, title)
+    shown = resume_text(base)
+    confirmed = {c.casefold() for c in confirmed_skills(settings)}
+    out: list[str] = []
+    for k in sorted(kw.items, key=lambda k: -k.weight):
+        if k.kind not in ("hard", "industry", "soft"):
+            continue
+        if (k.found_in(shown) or k.name.casefold() in confirmed) and k.name.casefold() not in {o.casefold() for o in out}:
+            out.append(k.name)
+    return out[:limit]
 
 
 def check_result(base: Resume, result: TailorResult) -> list:

@@ -9,6 +9,7 @@ import csv
 import io
 import json
 import re
+import sys
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -18,7 +19,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from ..config import Settings
-from ..network import (FOLLOW_UP_DAYS, STATUSES, TIE_KINDS, ConnectionStore, ContactStore, board_places, canonical_company, degree_short,
+from ..network import (FOLLOW_UP_DAYS, STATUSES, TIE_KINDS, ConnectionStore, ContactStore, board_places, canonical_company, degree_short, university_of,
                        company_key, connections_at, contact_score, job_ref, parse_connections_csv, referral_blurb,
                        contact_ties, due_follow_ups, fill_name, follow_up_draft, load_ties, location_focus,
                        message_drafts, metro_of, outreach_stats, parse_profile_text, posting_contacts, posting_places,
@@ -129,20 +130,37 @@ def register_network(app: FastAPI, settings: Settings, auth: list, desk_store, p
             return max(hits, key=lambda h: (h[0], h[1]))[2].label if hits else school
 
         an = lambda abbr: "an" if abbr[:1] in "AEFHILMNORSX" else "a"  # noqa: E731  ("an MBA", "an MS", "a BA")
+        by_label = {t.label: t for t in ties}
+        root_of = lambda label: (by_label[label].within if label in by_label and by_label[label].within in by_label  # noqa: E731
+                                 else label)
+        short_of = lambda label: by_label[label].short if label in by_label else label  # noqa: E731
         # the degree whose school the person weights highest leads ("Your ties" on the Network page)
         weight = {t.label: t.weight for t in ties}
         current.sort(key=lambda e: -weight.get(label_for(e.school), 0))
-        parts = []
+        # degrees at schools of one university are said together: "an MBA (Harbor) and an MS in Information (SOI) at
+        # the University of Michigan", "my MBA and MS at the University of Michigan"
+        groups: dict[str, list[tuple[str, str, str]]] = {}
         for e in current:
             abbr = degree_short(e.degree)
             field = f" in {e.field}" if e.field and abbr in ("MS", "MA", "BS", "BA") else ""
-            parts.append(f"{an(abbr)} {abbr}{field} at {label_for(e.school)}")
-        first = current[0] if current else None
+            label = label_for(e.school)
+            groups.setdefault(root_of(label), []).append((abbr, field, label))
+        parts, degrees, students = [], [], []
+        for root, items in groups.items():
+            inner = " and ".join(f"{an(a)} {a}{f}" + (f" ({short_of(lab)})" if lab != root else "") for a, f, lab in items)
+            # "MBA (Harbor) and MS (SOI)": the programs, named inside the university
+            abbrs = " and ".join(a + (f" ({short_of(lab)})" if lab != root else "") for a, _, lab in items)
+            parts.append(f"{inner} at {root}")
+            degrees.append(abbrs)
+            students.append(f"{an(items[0][0])} {abbrs} student at {root}")
         jobs = [x for x in (getattr(profile, "experience", []) or []) if getattr(x, "kind", "job") == "job"]
         out = {"name": name, "grad": grad or "this year", "school_line": " and ".join(parts) or "my degree"}
-        if first is not None:
-            abbr, school = degree_short(first.degree), label_for(first.school)
-            out.update(school=school, study=f"my {abbr} at {school}", student=f"{an(abbr)} {abbr} student at {school}")
+        # schools already finished, by the name the person's ties give the university: the alum note says the year
+        out["graduated"] = {root_of(label_for(e.school)): str(e.end.year) for e in edu
+                            if not getattr(e, "expected", False) and getattr(e, "end", None)}
+        if groups:
+            root = next(iter(groups))
+            out.update(school=root, degrees=degrees[0], study=f"my {degrees[0]} at {root}", student=students[0])
         if jobs:
             out["past"] = next((t.label for t in ties if t.kind == "employer" and t.words and
                                 any(w in jobs[0].employer.lower() for w in t.words)), jobs[0].employer)
@@ -280,7 +298,7 @@ def register_network(app: FastAPI, settings: Settings, auth: list, desk_store, p
         }
         if with_detail:
             ties = ties_now()
-            top_school = max((t for t in ties if t.kind in ("school", "program", "club")), key=lambda t: t.weight, default=None)
+            top_school = university_of(max((t for t in ties if t.kind in ("school", "program", "club")), key=lambda t: t.weight, default=None), ties)
             top_job = max((t for t in ties if t.kind == "employer"), key=lambda t: t.weight, default=None)
             live = next((p for p in posts if p.get("stage") in ("saved", "applying", "prospect") and p.get("url")), {})
             url = live.get("url", "")
@@ -325,7 +343,7 @@ def register_network(app: FastAPI, settings: Settings, auth: list, desk_store, p
         home, prefs = home_and_prefs()
         places = places_of(p)
         ties = ties_now()
-        top_school = max((t for t in ties if t.kind in ("school", "program", "club")), key=lambda t: t.weight, default=None)
+        top_school = university_of(max((t for t in ties if t.kind in ("school", "program", "club")), key=lambda t: t.weight, default=None), ties)
         top_job = max((t for t in ties if t.kind == "employer"), key=lambda t: t.weight, default=None)
         focus = location_focus(places, home, prefs)
         return {
@@ -473,7 +491,8 @@ def register_network(app: FastAPI, settings: Settings, auth: list, desk_store, p
         focus = location_focus(places, home, prefs)
         p = next((x for x in posts if x["id"] == c.get("posting_id")), None) or \
             next((x for x in posts if x.get("stage") in ("saved", "applying")), None) or (posts[0] if posts else {})
-        shared_school = next((t for t in ties if t.kind in ("school", "program", "club") and t.label in e["ties"]), None)
+        shared_school = university_of(next((t for t in ties if t.kind in ("school", "program", "club") and t.label in e["ties"]),
+                                           None), ties)
         shared_job = next((t for t in ties if t.kind == "employer" and t.label in e["ties"]), None)
         drafts = message_drafts(person(), c.get("company", ""), p.get("title", ""), focus[0] if focus else "",
                                 shared_school, shared_job, p.get("url", ""))
@@ -613,6 +632,8 @@ def register_network(app: FastAPI, settings: Settings, auth: list, desk_store, p
         if not parts:
             return
         msg = "; ".join(parts) + ". Open 127.0.0.1:8765/network"
+        if sys.platform != "darwin":  # the Mac's notification center; elsewhere the Network page shows the same list
+            return
         try:
             subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "Tailor: today\'s referrals"'],
                            timeout=10, check=False)

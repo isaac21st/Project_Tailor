@@ -1,11 +1,11 @@
 // Content script: reads the form, asks the local server what to do, applies it, and shows a small panel.
 //
-// HARD RULE: this script never submits anything. It types into text fields, chooses <select> options, ticks checkboxes
-// and radios, attaches the resume file and picks options in custom dropdowns. Every other press is one of a few
-// guarded clicks, each checked right before it happens (tests/test_extension_static.py counts them): a section's own
+// RULE: by default this script never submits anything. It types into text fields, chooses <select> options, ticks
+// checkboxes and radios, attaches the resume file and picks options in custom dropdowns. Every other press is one of a
+// few guarded clicks, each checked right before it happens (tests/test_extension_static.py counts them): a section's own
 // Add button (work or education entries), a question's own Yes/No answer button, and a step's Next / Continue button
-// (never one that says submit, apply, send, finish, confirm or sign, never on the Review page). No code path presses
-// Submit or Apply. The person reviews and clicks Submit.
+// (never one that says submit, apply, send, finish, confirm or sign, never on the Review page). The person reviews and
+// clicks Submit. The one exception is "Submit for me" (submitApplication), which the person turns on in Options only.
 "use strict";
 
 (() => {
@@ -67,6 +67,12 @@
   // SmartRecruiters' upload boxes are spl-dropzone components with no label of their own, told apart by data-test:
   // "resume-upload" is the Resume field; "apply-with-resume-container" is the Easy-apply parser (2026-10-14)
   function dropzoneRole(el) {
+    // Workday's My Experience upload, labelled only "Upload a file (5MB max)" (Huron, 2026-10-28): the resume, unless
+    // its own words say it is something else
+    if (el.getAttribute("data-automation-id") === "file-upload-input-ref" && isWorkday()) {
+      const ff = el.closest("[data-automation-id^='formField']");
+      if (!/cover|transcript|portfolio|writing|sample|other|additional/i.test(clean(ff ? ff.textContent : ""))) return "resume";
+    }
     const r = el.getRootNode();
     const host = r instanceof ShadowRoot ? r.host : null;
     if (!host || host.tagName !== "SPL-DROPZONE") return "";
@@ -74,7 +80,19 @@
     return /apply-with-resume/i.test(t) ? "parser" : /resume/i.test(t) ? "resume" : /cover/i.test(t) ? "cover" : "";
   }
 
+  // Workday's question dropdowns are named "Select One Required" (Accenture, 2026-10-30: seven questions read as
+  // "Required" and were left to the person): the question is the field's own label above the box
   function labelOf(el) {
+    const t = labelOfRaw(el);
+    if (!/^(?:select one)?\s*(?:required)?$/i.test(clean(t || ""))) return t;
+    const ff = el.closest("[data-automation-id^='formField']");
+    if (!ff) return t;
+    const lab = ff.querySelector("label, legend, [data-automation-id='richText']");
+    const q = clean(lab ? lab.textContent : (ff.innerText || "").replace(clean(el.textContent || ""), "")).slice(0, 600);
+    return q && !/^(?:select one)?\s*(?:required)?$/i.test(q) ? q : t;
+  }
+
+  function labelOfRaw(el) {
     const zone = el.type === "file" ? dropzoneRole(el) : "";
     if (zone === "resume") return "Resume";
     if (zone === "cover") return "Cover letter";
@@ -106,6 +124,10 @@
   }
 
   function groupLabel(first) {
+    // a question with a line of help under it (Decagon, 2026-11-10: "Please reference the location(s)..." was read as the
+    // question, so two work-authorization answers were left blank): the entry's own title is the question
+    const title = first.closest("[class*='field-entry']")?.querySelector("[class*='question-title']");
+    if (title && clean(title.textContent)) return clean(title.textContent);
     const fs = first.closest("fieldset");
     if (fs) { const lg = fs.querySelector("legend"); if (lg) return clean(lg.textContent); }
     const grp = first.closest("[role='radiogroup'],[role='group']");
@@ -249,6 +271,15 @@
   // What an education or work entry already says (a school or degree the site filled in from the resume), so the
   // server can match the entry to the right resume line instead of relying on the order alone.
   function entryHint(el) {
+    // Workday: every box of one entry has the entry's id prefix ("education-9--schoolName", "education-9--degree");
+    // what they hold says which school or job this entry is (Huron, 2026-10-30: saved entries came back in another
+    // order and were given degrees by position, UCD got "PhD")
+    const wd = (el.id || "").match(/^((?:education|workExperience)-\d+)--/);
+    if (wd) {
+      return deepAll(`[id^="${wd[1]}--"]`).map((x) => x.tagName === "BUTTON" ? clean(x.textContent)
+        : x.getAttribute("data-uxi-widget-type") === "selectinput" ? tagsOf(x).map((t) => clean(t.textContent)).join(" ")
+        : (x.value || "")).join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
+    }
     // Ashby: only this entry's own boxes (the section holds every school: the first one's text would match them all)
     const own = el.closest(ASHBY_ENTRY);
     if (own) return [...own.querySelectorAll("input[type='text'], input[role='combobox']")].map((x) => x.value || "").join(" ").replace(/\s+/g, " ").trim().slice(0, 200);
@@ -275,6 +306,10 @@
   const DATE_SIDE = /^(start date|end date|from|to|start|end)(?:\s*\([^)]*\))?\s*:?$/i;
   function withDateSide(el, label) {
     if (!/^(month|year|day)\*?$/i.test(label)) return label;
+    // the date's own fieldset heading first: Huron's Workday nests "From" deeper than four levels up (2026-10-28)
+    const legend = el.closest("fieldset") && el.closest("fieldset").querySelector(":scope > legend");
+    if (legend && DATE_SIDE.test(clean(legend.textContent)))
+      return clean(legend.textContent).replace(/\s*\([^)]*\)/, "").replace(/:$/, "") + " " + label;
     const root = el.closest("li") || el.parentElement?.parentElement?.parentElement?.parentElement;
     if (!root) return label;
     const marks = [...root.querySelectorAll("span, div, p, label, legend, h3, h4, h5")].filter((n) =>
@@ -300,7 +335,14 @@
     if (/dateSectionDay/i.test(id) && !/day/i.test(label)) return label + " Day";
     return label;
   }
-  const valueOf = (el) => el.type === "checkbox" ? (el.checked ? "true" : "") : (el.value || "").slice(0, 300);
+  // what a custom dropdown shows chosen counts as its answer: a second fill does not press through all of them again
+  // (Databricks, 2026-11-04: 31 s redoing 21 answers), and the person's own choice is left alone
+  const chosenIn = (el) => {
+    const box = isCombobox(el) && (comboControl(el) || el.parentElement);
+    const shown = box && box.querySelector("[class*='single-value'], [class*='singleValue']");
+    return shown ? clean(shown.textContent) : "";
+  };
+  const valueOf = (el) => el.type === "checkbox" ? (el.checked ? "true" : "") : (el.value || chosenIn(el) || "").slice(0, 300);
 
   function collectFields() {
     registry.clear(); fieldInfo.clear();
@@ -416,6 +458,17 @@
       if (el.select) el.select();
       if (document.execCommand("insertText", false, text) && (el.value || "").replace(/^0/, "") === text.replace(/^0/, "")) return;
     }
+    if (el.tagName === "TEXTAREA" && isWorkday()) {
+      // Workday keeps a text area's words only when they arrive as typing; set by script they vanished on its next
+      // redraw (Huron's Role Description, 2026-10-30)
+      el.focus();
+      el.select();
+      if (document.execCommand("insertText", false, value) && el.value === value) {
+        el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        el.blur();
+        return;
+      }
+    }
     setNative(el, value);
     fire(el, ["input", "change", "blur"]);
   }
@@ -522,6 +575,10 @@
   async function uploadResume(el) {
     assertSafe(el);
     if (el.type !== "file") throw new Error("not a file input");
+    // already attached (Workday lists an uploaded file under its box and empties the box itself): a second fill of
+    // the step must not add the resume again (Huron, 2026-10-30: two copies)
+    const field = el.closest("[data-automation-id^='formField']");
+    if (field && isWorkday() && /successfully uploaded/i.test(field.innerText || "")) return;
     revealUpload(el);
     const r = await send({ type: "resume", id: resumeId });
     if (!r.ok) throw new Error(r.error);
@@ -580,10 +637,13 @@
     return r instanceof ShadowRoot ? clean(r.host.textContent) : "";
   }
 
+  // an older react-select marks its options only by id ("react-select-4-option-0", Pinpoint 2026-11-04: the list was open
+  // and read as empty, so every dropdown on the form said it did not open)
+  const LIST_OPTION = '[role="option"], [id*="-option-"]';
   function comboOptions(input) {
     const id = input.getAttribute("aria-controls") || input.getAttribute("aria-owns");
     const list = id && byIdUp(input, id);
-    if (list) return deepAll('[role="option"]', list).filter((o) => optText(o));
+    if (list) return deepAll(LIST_OPTION, list).filter((o) => optText(o));
     // no link to its list (Google's School name): the list shown next to this box
     const near = input.closest("div") && input.closest("div").parentElement;
     const own = near && near.querySelector("[role='listbox']");
@@ -600,13 +660,26 @@
   const tagsOf = (input) => [...document.querySelectorAll(`[data-uxi-widget-type='selectinputlistitem'][data-uxi-multiselect-id='${CSS.escape(input.getAttribute("data-uxi-multiselect-id") || "")}']`)];
   async function chooseWorkdayPrompt(input, wanted, key) {
     assertSafe(input);
+    // already chosen (a saved draft, Adobe 2026-11-03: LinkedIn was there, the search found nothing new, and it was
+    // reported as a failure): a chosen answer shows under the box with its own delete mark
+    const box = input.closest("[data-automation-id^='formField']");
+    if (box && [...box.querySelectorAll("[data-automation-id='DELETE_charm']")].some((d) => {
+      const item = d.closest("[role='option'], [data-uxi-widget-type='selectinputlistitem']");
+      return item && clean(item.textContent).toLowerCase() === clean(wanted).toLowerCase();
+    })) return;
     const tries = [...new Set([wanted, wanted.split(",")[0], wanted.split(/\s+/).slice(-2).join(" ")].map(clean).filter((x) => x.length > 1))];
     for (const query of tries) {
+      // a list still open (this box's or the one before) keeps showing its A-Z options and the search never runs
+      // (Huron, 2026-10-28): close it first, then a whole Enter press (down, press, up) runs the search
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (document.activeElement && document.activeElement !== input) document.activeElement.blur();
+      await sleep(250);
       input.focus();
       setNative(input, query);
       fire(input, ["input"]);
       const tagsBefore = tagsOf(input).map((x) => clean(x.textContent));
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true }));
+      for (const type of ["keydown", "keypress", "keyup"])
+        input.dispatchEvent(new KeyboardEvent(type, { key: "Enter", code: "Enter", keyCode: 13, charCode: type === "keypress" ? 13 : 0, which: 13, bubbles: true, cancelable: true }));
       let options = [], tagged = null;
       for (let i = 0; i < 15 && !options.length && !tagged; i++) {
         await sleep(200);
@@ -640,7 +713,69 @@
     }
     setNative(input, ""); fire(input, ["input"]);
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    if (await browseWorkdayPrompt(input, wanted, key)) return;
     throw new Error("Workday's list has nothing for '" + wanted + "': pick it yourself");
+  }
+
+  // A Workday list in categories (Huron's "How Did You Hear About Us?", 2026-10-28: LinkedIn sits under a category and
+  // the search found nothing): open the list and look inside each category for the answer. Only the list's own options
+  // are pressed: a category opens its part of the list, the answer becomes the tag.
+  const promptItems = () => [...document.querySelectorAll("[role='option'][data-automation-id='menuItem']")].filter(isVisible);
+  function openPrompt(input) {  // the box's own pointer events, as a person's press on it
+    assertSafe(input);
+    if (input.getAttribute("data-uxi-widget-type") !== "selectinput") throw new Error("not a Workday list box");
+    input.focus();
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+      const Ev = type.startsWith("pointer") ? PointerEvent : MouseEvent;
+      input.dispatchEvent(new Ev(type, { bubbles: true, cancelable: true, button: 0, view: window }));
+    }
+  }
+  function pressPromptItem(o) {
+    if (!o || !o.isConnected || o.getAttribute("role") !== "option" || o.getAttribute("data-automation-id") !== "menuItem" ||
+        o.closest("a, button, #tailor-panel-host") || !isVisible(o)) throw new Error("not an option of the list");
+    o.click();  // an option of this box's own list (a category or the answer), checked right above
+  }
+  async function browseWorkdayPrompt(input, wanted, key) {
+    const want = clean(wanted).toLowerCase();
+    const text = (o) => clean(o.textContent).toLowerCase();
+    const isLeaf = (o) => !!o.querySelector("[data-automation-id='promptLeafNode']");
+    const settle = async (before) => {
+      for (let i = 0; i < 12; i++) {
+        await sleep(200);
+        const now = promptItems();
+        if (now.length && now.map(text).join("|") !== before) return now;
+      }
+      return promptItems();
+    };
+    const pickLeaf = async (items) => {
+      const leaves = items.filter(isLeaf);
+      let pick = leaves.find((o) => text(o) === want) || leaves.find((o) => text(o).startsWith(want));
+      if (!pick && leaves.length) {
+        const r = await send({ type: "choose", payload: { value: wanted, key, options: leaves.map((o) => clean(o.textContent)) } }).catch(() => null);
+        const choice = r && r.ok && r.data && r.data.choice;
+        if (choice) pick = leaves.find((o) => clean(o.textContent) === choice);
+      }
+      return pick || null;
+    };
+    const close = () => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    openPrompt(input);
+    let top = await settle("");
+    const categories = top.filter((o) => !isLeaf(o)).map(text).slice(0, 12);
+    let pick = await pickLeaf(top);
+    for (let c = 0; !pick && c < categories.length; c++) {
+      if (c > 0) { close(); await sleep(300); openPrompt(input); top = await settle(""); }
+      const cat = top.find((o) => !isLeaf(o) && text(o) === categories[c]);
+      if (!cat) continue;
+      const before = promptItems().map(text).join("|");
+      pressPromptItem(cat);
+      pick = await pickLeaf(await settle(before));
+    }
+    if (!pick) { close(); return false; }
+    const n = tagsOf(input).length;
+    pressPromptItem(pick);
+    for (let i = 0; i < 10 && tagsOf(input).length <= n; i++) await sleep(200);
+    close();
+    return tagsOf(input).length > n;
   }
 
   async function chooseCombobox(entry, wanted, key = "") {
@@ -667,15 +802,22 @@
     setNative(input, more.length ? first : wanted);  // typing filters the list
     fire(input, ["input"]);
     let options = [];
-    for (let i = 0; i < 12 && !options.length; i++) { await sleep(200); options = comboOptions(input); }
+    for (let i = 0; i < 32 && !options.length; i++) { await sleep(75); options = comboOptions(input); }
     const want = clean(more.length ? first : wanted).toLowerCase();
     const text = (o) => optText(o).toLowerCase();
     const matches = options.filter((o) => text(o) === want || text(o).startsWith(want) || hasWords(text(o), want));
     const byDetail = detail ? matches.filter((o) => hasWords(text(o), detail)) : [];
+    // an option's first line is its name, the rest is about it ("University of Michigan / United States / umich.edu" above
+    // "University of Michigan-Flint", Ashby): the school itself is not one of several campuses, and is not a guess
+    // (Plaid, 2026-11-04: "Ohio State University" went to "The Ohio State University Newark")
+    const nameOf = (o) => clean((o.innerText || o.textContent || "").split("\n")[0]).toLowerCase().replace(/^the /, "");
+    const named = options.filter((o) => nameOf(o) === want.replace(/^the /, ""));
     let pick = byDetail.length === 1 ? byDetail[0]
+      : named.length === 1 ? named[0]
       : (detail || /school/.test(key)) && matches.length > 1 ? null  // several campuses: not the first one listed
       : options.find((o) => text(o) === want) || options.find((o) => text(o).startsWith(want)) ||
-        options.find((o) => hasWords(text(o), want));
+        // inside one option only: "Asian" in "East Asian", "South Asian" and "Southeast Asian" is not the first one listed
+        (matches.length === 1 ? matches[0] : null);
     if (!pick && matches.length > 1) {  // let the server say which (it reads the city), or nobody guesses
       const r = await send({ type: "choose", payload: { value: wanted, key, options: matches.map((o) => optText(o)) } }).catch(() => null);
       const choice = r && r.ok && r.data && r.data.choice;
@@ -704,12 +846,20 @@
       for (const q of shorter) {
         setNative(input, q); fire(input, ["input"]);
         let found = [];
-        for (let i = 0; i < 10 && !found.length; i++) { await sleep(200); found = comboOptions(input); }
+        for (let i = 0; i < 27 && !found.length; i++) { await sleep(75); found = comboOptions(input); }
         if (!found.length) continue;
         const r = await send({ type: "choose", payload: { value: wanted, key, options: found.map((o) => optText(o)) } }).catch(() => null);
         const choice = r && r.ok && r.data && r.data.choice;
         pick = choice && found.find((o) => optText(o) === choice);
         if (pick) { options = found; break; }
+      }
+      // a school this list does not have: its "Other" is the true answer, once every search has found nothing (2026-11-04)
+      if (!pick && /school/.test(key)) {
+        setNative(input, "Other"); fire(input, ["input"]);
+        let found = [];
+        for (let i = 0; i < 27 && !found.length; i++) { await sleep(75); found = comboOptions(input); }
+        pick = found.find((o) => /^other\b/i.test(optText(o))) || null;
+        if (pick) options = found;
       }
     }
     if (!pick) {
@@ -717,13 +867,14 @@
       // whole list, and let the server say which option means the answer.
       setNative(input, ""); fire(input, ["input"]);
       let all = [];
-      for (let i = 0; i < 6 && !all.length; i++) { await sleep(200); all = comboOptions(input); }
+      for (let i = 0; i < 16 && !all.length; i++) { await sleep(75); all = comboOptions(input); }
       if (!all.length && control) {
         // Greenhouse loads a list's options the first time one opens (Guidepoint, 2026-10-07: the first Degree list
         // came up empty, the later ones had 10 options): open it again and wait, up to about 9 s
         for (let round = 0; round < 3 && !all.length; round++) {
           press();
-          for (let i = 0; i < 15 && !all.length; i++) { await sleep(200); all = comboOptions(input); }
+          for (let i = 0; i < 40 && !all.length; i++) { await sleep(75); all = comboOptions(input); }
+          if (input.getAttribute("aria-expanded") === "false") break;  // it is not opening at all: do not wait on it
         }
       }
       console.debug("[tailor] list fallback", input.id, JSON.stringify(wanted), "typed:", options.length, "all:", all.length);
@@ -742,13 +893,16 @@
       input.blur();
       return;
     }
-    if (!pick || pick.getAttribute("role") !== "option") {
+    if (!pick || (pick.getAttribute("role") !== "option" && !/-option-\d+$/.test(pick.id))) {
       setNative(input, ""); fire(input, ["input"]);
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (!options.length && document.visibilityState === "hidden") hiddenDropdowns++;  // filled again when shown
+      console.debug("[tailor] no list", input.id, "expanded", input.getAttribute("aria-expanded"), "controls", input.getAttribute("aria-controls"),
+        "active", document.activeElement && document.activeElement.id, "options on page", document.querySelectorAll("[role='option']").length);
       throw new Error(options.length ? "no option matches '" + wanted + "'" : "the dropdown did not open");
     }
     pick.click();  // an option inside this dropdown's own list
-    await sleep(200);
+    await sleep(100);
   }
 
   // ---------- suggestion lists under a plain text box (Lever's "Current location") ----------
@@ -839,8 +993,9 @@
       }
     }
     const text = (o) => clean(o.textContent).toLowerCase();
+    const inside = options.filter((o) => hasWords(text(o), want));  // inside several options: not the first one listed
     let pick = options.find((o) => text(o) === want) || options.find((o) => text(o).startsWith(want)) ||
-      options.find((o) => hasWords(text(o), want));
+      (inside.length === 1 ? inside[0] : null);
     if (!pick && options.length) {  // "Master of Business Administration" in a list that says "MBA"
       const r = await send({ type: "choose", payload: { value: wanted, key, options: options.map((o) => clean(o.textContent)) } }).catch(() => null);
       const choice = r && r.ok && r.data && r.data.choice;
@@ -932,7 +1087,19 @@
     save();
   }
 
+  // Workday's Candidate Home after submitting (Huron and Accenture, 2026-10-30): it lists the applications sent on the
+  // site; the Desk's roles among them are marked applied. Read only, once per visit.
+  let homeReported = "";
+  function reportWorkdayHome() {
+    if (!isWorkday() || !/\/userHome\b/i.test(location.pathname) || window !== window.top) return;
+    const text = pageText();
+    if (text.length < 200 || homeReported === text.slice(0, 2000)) return;
+    homeReported = text.slice(0, 2000);
+    send({ type: "applied_list", payload: { url: location.href, page_text: text.slice(0, 30000) } }).catch(() => {});
+  }
+
   function reportIfApplied() {
+    reportWorkdayHome();
     if (reportedFor === location.href || window !== window.top) return;
     const text = pageText();
     if (text.length > 30000 || !CONFIRMED.test(text.slice(0, 8000))) return;
@@ -940,8 +1107,14 @@
     chrome.storage.local.get("lastResume").catch(() => ({})).then((s) => {
       const r = s && s.lastResume && s.lastResume.host === location.hostname && Date.now() - s.lastResume.at < 6 * 3600 * 1000
         ? s.lastResume.id : "";
-      return send({ type: "applied", payload: { url: location.href, title: document.title, page_text: text.slice(0, 8000),
-                                                host: location.hostname, resume_id: r || "" } });
+      // the posting seen on this site before the form: a role not on the Desk is added from it (2026-10-30)
+      return send({ type: "recall_posting", host: location.hostname }).catch(() => null).then((rp) => {
+        const post = rp && rp.ok && rp.data ? rp.data : null;
+        return send({ type: "applied", payload: { url: location.href, title: document.title, page_text: text.slice(0, 8000),
+                                                  host: location.hostname, resume_id: r || "",
+                                                  posting_url: post ? post.url : "", posting_title: post ? post.title : "",
+                                                  posting_text: post ? String(post.text || "").slice(0, 20000) : "" } });
+      });
     }).catch(() => {});
   }
 
@@ -1031,6 +1204,7 @@
           <div class="row" id="stoprow" style="display:none"><button id="stopnext" class="secondary">Stop: stay on this step</button></div>
           <div id="reviewlist" class="note" style="display:none;margin:8px 0;padding:8px;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb"></div>
           <div class="row" id="queuerow" style="display:none"><button id="queuenext" class="secondary">I submitted it: open the next application</button></div>
+          <details class="chat" id="fitbox" style="display:none"><summary id="fitsum"></summary><div class="note" id="fitbody"></div></details>
           <div class="ats" id="ats"></div>
           <div id="kwbox" style="display:none"><div class="note">The posting asks for these and your resume does not show them.
             Click one only if you really have it: it is added to your skills where postings ask for it.</div>
@@ -1045,12 +1219,17 @@
             <div class="row"><button id="chatgo">Write it</button></div>
             <div class="note" id="chatnote"></div>
           </details>
-          <div class="note">You review everything and click Submit yourself. Tailor Assist never submits.
+          <div class="note" id="submitnote">You review everything and click Submit yourself. Tailor Assist never submits.
             <span style="float:right;color:#999">v${chrome.runtime.getManifest().version}</span></div>
         </div>
       </div>`;
     keepClearOfButtons(root);
-    root.getElementById("fill").addEventListener("click", () => run());
+    root.getElementById("fill").addEventListener("click", async () => {
+      // the person starts it again: a fresh count of steps gone through by itself (Huron, 2026-10-28)
+      await chrome.storage.local.set({ autoFlow: { host: location.hostname, at: Date.now(), steps: 0 } }).catch(() => {});
+      autoNextCount = 0;
+      run();
+    });
     root.getElementById("rescan").addEventListener("click", () => run());
     root.getElementById("min").addEventListener("click", () => root.getElementById("box").classList.toggle("min"));
     root.getElementById("chat").addEventListener("toggle", () => { if (root.getElementById("chat").open) refreshChatFields(); });
@@ -1074,6 +1253,10 @@
       chrome.storage.local.get("autoNext").then((s) => { box.checked = s.autoNext !== false; }).catch(() => {});
       box.addEventListener("change", () => chrome.storage.local.set({ autoNext: box.checked }).catch(() => {}));
     }
+    chrome.storage.local.get("autoSubmit").then((s) => {
+      if (s.autoSubmit === true) root.getElementById("submitnote").firstChild.textContent =
+        "Submit for me is on: when everything is filled it submits after a 10-second countdown you can stop. Change it in Options. ";
+    }).catch(() => {});
     document.documentElement.appendChild(host);
     panel = { host, root, status: root.getElementById("status"), needs: root.getElementById("needs"),
               fill: root.getElementById("fill"), rescan: root.getElementById("rescan"), tailor: root.getElementById("tailornote"),
@@ -1259,10 +1442,40 @@
       if (t && t.ok) tailoredFor.set(key, hit);
     }
     resumeId = hit.id;
+    if (hit.report && hit.report.fit) showFit(p, hit.report.fit);
     p.tailor.textContent = hit.id ? hit.summary.replace(/^ATS match [^.]*\.\s*/, "") : hit.summary + " Using your default resume.";
     showKeywords(p, hit);
     await offerDownload(p);
     return hit;
+  }
+
+  // How this role fits the person, from the server's read of the posting. Text only, and it never changes what is filled.
+  function showFit(p, fit) {
+    const box = p.root.getElementById("fitbox"), body = p.root.getElementById("fitbody");
+    const c = fit.counts || {};
+    p.root.getElementById("fitsum").textContent = `Role fit: ${fit.score}/100, ${fit.label}` + (fit.track ? ` (${fit.track.name})` : " (outside your targets)");
+    body.textContent = "";
+    const add = (head, lines) => {
+      if (!lines.length) return;
+      const h = document.createElement("div"); h.style.fontWeight = "600"; h.style.marginTop = "6px"; h.textContent = head; body.appendChild(h);
+      for (const line of lines) { const d = document.createElement("div"); d.textContent = line; body.appendChild(d); }
+    };
+    add("Requirements", [`${c.direct || 0} direct, ${c.transferable || 0} transferable, ${c.academic || 0} academic, ${c.missing || 0} missing`]);
+    add("By area", (fit.dimensions || []).map((d) => `${d.name}: ${d.score === null ? "n/a" : d.score}. ${d.why}`));
+    add("Strongest", (fit.strongest || []).map((r) => `${r.label}: ${r.text}`));
+    add("Missing", (fit.missing || []).map((r) => r.text));
+    add("Your experience to use", (fit.experiences || []).map((e) => e.entry));
+    add("Positioning", [...(fit.positioning || []), ...(fit.notes || [])]);
+    box.style.display = "block";
+  }
+
+  let fitReadFor = "";
+  async function checkFit() {
+    if (window !== window.top || fitReadFor === location.href) return;
+    fitReadFor = location.href;
+    const posting = await postingText();
+    const r = await send({ type: "fit", payload: { url: location.href, title: posting.title, page_text: posting.text, instruction: "" } }).catch(() => null);
+    if (r && r.ok && r.data && r.data.fit) showFit(ensurePanel(), r.data.fit);
   }
 
   // The guide's step 3 (2026-10-06): the keyword match before and after tailoring, and the posting's keywords the
@@ -1368,7 +1581,11 @@
   }
   const pageErrors = () => !!document.querySelector("[data-automation-id='errorBanner'], [data-automation-id='errorMessage']") ||
     [...document.querySelectorAll("[aria-invalid='true'], [role='alert']")].some((e) => isVisible(e) && !e.closest("#tailor-panel-host") &&
-      (e.getAttribute("aria-invalid") === "true" || clean(e.textContent).length > 3));
+      (e.getAttribute("aria-invalid") === "true" || clean(e.textContent).length > 3 && !isAnnouncement(e)));
+  // a screen-reader announcement, not an error: Workday's hidden "Resume.pdf successfully uploaded" (Huron, 2026-10-28)
+  const isAnnouncement = (e) => e.getAttribute("data-automation-id") === "ariaLiveMessage" ||
+    (e.getBoundingClientRect().width === 0 && e.getBoundingClientRect().height === 0) ||
+    /\bsuccess(?:fully)?\b|\buploaded\b|\bsaved\b/i.test(clean(e.textContent)) && !/\berror|\brequired|\binvalid|\bfail/i.test(clean(e.textContent));
   let cancelNext = false;
   let autoNextCount = 0;
   const FLOW_MS = 10 * 60 * 1000;  // a step loaded as a new page continues the flow on the same site for 10 minutes
@@ -1440,7 +1657,7 @@
   const universalAddButton = (heading) => [...document.querySelectorAll("button, [role='button'], a")].find((b) => isAddButtonFor(b, heading));
   function assertAddButton(btn, heading) {
     if (!btn || !(btn.tagName === "BUTTON" || btn.getAttribute("role") === "button" || btn.tagName === "A") || btn.closest("#tailor-panel-host")) throw new Error("not an Add button");
-    if (!/^(?:work experience|education)$/.test(heading)) throw new Error("not a work or education group");
+    if (!/^(?:work experience|education)$/.test(heading) && !(heading === "websites" && isWorkday())) throw new Error("not a work or education group");
     if (isAshby()) {
       const f = ashbyField(btn);
       if (!ASHBY_ADD[heading].test(clean(btn.textContent)) || !f || ashbySection(f.getAttribute("data-field-path")) !== (heading === "education" ? "education" : "experience")) throw new Error("not the " + heading + " section");
@@ -1464,7 +1681,8 @@
   async function addEntries(add) {
     let pressed = 0;
     for (const [section, n] of Object.entries(add || {})) {
-      const heading = section === "experience" ? "work experience" : section === "education" ? "education" : "";
+      const heading = section === "experience" ? "work experience" : section === "education" ? "education"
+        : section === "websites" && isWorkday() ? "websites" : "";  // Workday's Websites list (Huron, 2026-10-30)
       for (let i = 0; i < Math.min(n, 6); i++) {
         const btn = isAshby() ? ashbyAddButton(heading) : isGreenhouse()
           ? document.querySelector(`${ghContainer(heading)} .add-another-button`)
@@ -1601,11 +1819,14 @@
   // a form with steps shows them (Workday's progress bar, a list of steps, "Step 2 of 4"); a one-page form does not
   const hasSteps = () => isWorkday() || !!document.querySelector("[aria-current='step'], li[class*='step'], [class*='stepper'], [class*='progress'] li") ||
     /\bstep \d+ of \d+\b/i.test(pageText().slice(0, 3000));
-  async function announceReview() {
+  async function announceReview(result = null) {
     if (reviewAnnounced) return;
     reviewAnnounced = true;
     ensurePanel();
-    setStatus(hasSteps() ? "Ready for your review: this is the last step. Check everything, then click Submit yourself. Tailor Assist never submits."
+    // only "everything is filled" when it is (Decagon, Reddit, 2026-11-10: said so with required answers still blank)
+    const left = result && result.needs ? result.needs : 0;
+    setStatus(left ? `Almost there: ${left} ${left === 1 ? "answer still needs" : "answers still need"} you (listed below). Then check the page and click Submit yourself. Tailor Assist never submits.`
+      : hasSteps() ? "Ready for your review: this is the last step. Check everything, then click Submit yourself. Tailor Assist never submits."
       : "Ready for your review: everything this page asks is filled. Check it, then click Submit yourself. Tailor Assist never submits.");
     // what came up on the earlier steps, listed here so nothing is missed before Submit
     const s = await chrome.storage.local.get("reviewList").catch(() => ({}));
@@ -1627,6 +1848,7 @@
       }
     }
     await chrome.storage.local.remove("reviewList").catch(() => {});
+    if (await maybeSubmit(list, result)) return;  // "Submit for me" is on and nothing stands in the way
     // the apply queue: when the person has submitted, this opens the next application (a confirmation page does the
     // same by itself; this button is for sites whose confirmation Tailor cannot see, like Airbnb's embedded form)
     const row = panel.root.getElementById("queuerow");
@@ -1647,6 +1869,7 @@
     const el = n.entry && n.entry.els && n.entry.els[0];
     if (!el) return false;
     if (el.required || el.getAttribute("aria-required") === "true") return true;
+    if (el.closest("[class*='field-entry']")?.querySelector("[class*='question-title'][class*='required']")) return true;  // never "Ready" past it
     const group = el.closest("fieldset, [role='group'], [role='radiogroup']");
     if (group && (group.getAttribute("aria-required") === "true" || group.querySelector("[required], [aria-required='true']"))) return true;
     const lab = (el.labels && el.labels[0]) || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || (group && group.querySelector("legend, label"));
@@ -1664,6 +1887,123 @@
     await chrome.storage.local.set({ reviewList: cur }).catch(() => {});
   }
 
+  // ---------- "Submit for me" (off unless the person turns it on in Options) ----------
+  // The person asked for it (2026-10-28): "apply immediately without me giving the okay, as an option". It submits only
+  // at the end of an application Tailor filled itself, only when nothing required is empty (an "I certify" box Tailor
+  // never ticks keeps it from submitting), with no CAPTCHA, sign-in or error on the page, never on a school job board,
+  // with drafted answers only if the person allowed that too, at most their daily limit, after a 10-second countdown
+  // they can stop, and only by the page's one Submit button. Anything in the way: it stops and says why, as before.
+  const CAPTCHA = "iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], iframe[title*='captcha' i], .g-recaptcha, .h-captcha, .cf-turnstile";
+  const isPressable = (b) => b.tagName === "BUTTON" || b.getAttribute("role") === "button" ||
+    (b.tagName === "INPUT" && ["button", "submit"].includes((b.type || "").toLowerCase()));
+  function submitButtons() {
+    return deepAll("button, [role='button'], input").filter((b) => isPressable(b) && isVisible(b) && !b.disabled &&
+      b.getAttribute("aria-disabled") !== "true" && !b.closest("#tailor-panel-host") && FINAL_TEXT.test(stepWords(b)));
+  }
+  // required boxes that are still empty: the step cannot be sent without them
+  function emptyRequired() {
+    const out = [];
+    const groups = new Set();
+    for (const el of deepAll("input, select, textarea")) {
+      const t = (el.type || "").toLowerCase();
+      if (["hidden", "submit", "button", "reset", "image"].includes(t) || el.disabled || el.closest("#tailor-panel-host")) continue;
+      if (!(el.required || el.getAttribute("aria-required") === "true") || (t !== "file" && !isVisible(el))) continue;
+      const name = (labelOf(el) || el.name || "a field").slice(0, 80);
+      if (t === "radio") {
+        if (groups.has(el.name)) continue;
+        groups.add(el.name);
+        const group = el.name ? deepAll("input").filter((r) => r.type === "radio" && r.name === el.name) : [el];
+        if (!group.some((r) => r.checked)) out.push(name);
+      } else if (t === "checkbox") { if (!el.checked) out.push(name); }
+      else if (t === "file") { if (!el.files || !el.files.length) out.push(name); }
+      else if (isEmptyNow(el)) out.push(name);
+    }
+    return out;
+  }
+  async function submitBlockers(list, result, s) {
+    const why = [];
+    const flow = s.autoFlow || {};
+    const ours = filledOnce || (flow.host === location.hostname && Date.now() - (flow.at || 0) < FLOW_MS);
+    if (!ours) why.push("Tailor did not fill this application");
+    if (NO_AUTO_NEXT.test(location.hostname)) why.push("school job boards are never submitted for you");
+    const today = new Date().toDateString();
+    const cap = Number.isFinite(s.autoSubmitCap) ? s.autoSubmitCap : 10;
+    if ((s.autoSubmitLog || []).filter((x) => x.outcome !== "stopped" && new Date(x.at).toDateString() === today).length >= cap)
+      why.push(`today's limit of ${cap} is reached`);
+    if (result && result.requiredNeeds) why.push(`${result.requiredNeeds} required question(s) need you`);
+    const drafts = list.filter((it) => /^Drafted answer:/.test(it.what)).length + (result ? result.drafted || 0 : 0);
+    if (drafts && s.autoSubmitDrafts !== true) why.push(`it drafted ${drafts} written answer(s) for you to read`);
+    const empty = emptyRequired();
+    if (empty.length) why.push("still empty: " + empty.slice(0, 3).join("; "));
+    if (deepAll(CAPTCHA).some((c) => isVisible(c))) why.push("the page has a CAPTCHA");
+    if (deepAll("input").some((el) => el.type === "password" && isVisible(el))) why.push("the page asks for a password");
+    if (pageErrors()) why.push("the page shows an error");
+    const btns = submitButtons();
+    if (new Set(btns.map((b) => stepWords(b).toLowerCase())).size !== 1) why.push(btns.length ? "more than one kind of Submit button" : "no Submit button found");
+    return why;
+  }
+  function assertSubmitButton(btn) {
+    if (!btn || !btn.isConnected || !isPressable(btn) || btn.closest("#tailor-panel-host") || !isVisible(btn) || btn.disabled)
+      throw new Error("not the page's Submit button");
+    const text = stepWords(btn);
+    if (!FINAL_TEXT.test(text) || /delete|remove|withdraw|cancel|draft|later/i.test(text)) throw new Error("refusing to press '" + text + "'");
+  }
+  async function logSubmit(entry) {
+    const s = await chrome.storage.local.get("autoSubmitLog").catch(() => ({}));
+    const log = (s.autoSubmitLog || []).concat([entry]).slice(-200);
+    await chrome.storage.local.set({ autoSubmitLog: log }).catch(() => {});
+  }
+  async function maybeSubmit(list, result) {
+    if (window !== window.top) return false;
+    const s = await chrome.storage.local.get(["autoSubmit", "autoSubmitDrafts", "autoSubmitCap", "autoSubmitLog", "autoFlow"]).catch(() => ({}));
+    if (s.autoSubmit !== true) return false;  // the person's own setting, in Options; off unless they turned it on
+    const why = await submitBlockers(list, result, s);
+    if (why.length) {
+      setStatus(panel.status.textContent + " Not submitted for you: " + why.join("; ") + ".");
+      return false;
+    }
+    return submitApplication();
+  }
+  async function submitApplication() {
+    const p = panel;
+    const btn = submitButtons()[0];
+    cancelNext = false;
+    const stopRow = p.root.getElementById("stoprow");
+    p.root.getElementById("stopnext").textContent = "Stop: don't submit";
+    stopRow.style.display = "flex";
+    await alertOnce("done", `Submitting the application on ${location.hostname} in 10 seconds. Open the tab to stop it.`).catch(() => {});
+    for (let n = 10; n > 0; n--) {
+      setStatus(`Everything is filled. Submitting for you in ${n} s (Submit for me is on)...`);
+      await sleep(1000);
+      if (cancelNext) break;
+    }
+    stopRow.style.display = "none";
+    p.root.getElementById("stopnext").textContent = "Stop: stay on this step";
+    const entry = { at: Date.now(), host: location.hostname, url: location.href.slice(0, 300), title: document.title.slice(0, 120) };
+    if (cancelNext) {
+      await logSubmit({ ...entry, outcome: "stopped" });
+      setStatus("Stopped: not submitted. Check it and click Submit yourself.");
+      return true;
+    }
+    // checked again right before the press: the page may have changed during the countdown
+    const now = await submitBlockers([], null, await chrome.storage.local.get(["autoSubmitCap", "autoSubmitLog", "autoFlow"]).catch(() => ({})));
+    try { if (now.length) throw new Error(now.join("; ")); assertSubmitButton(btn); }
+    catch (e) { setStatus("Not submitted: " + e.message + ". Check it and click Submit yourself."); return true; }
+    await logSubmit({ ...entry, outcome: "submitted" });
+    await chrome.storage.local.set({ autoSubmitted: { host: location.hostname, at: Date.now() } }).catch(() => {});
+    btn.click();  // the page's one Submit button, checked right above; only with "Submit for me" on
+    setStatus("Submitted for you. Waiting for the site's confirmation...");
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      if (CONFIRMED.test(pageText().slice(0, 8000))) { reportIfApplied(); setStatus("Submitted for you, and the site confirmed it."); return true; }
+    }
+    if (pageErrors() || emptyRequired().length) {
+      setStatus("Pressed Submit, but the page shows a problem: fix it and submit yourself.");
+      await alertOnce("needs_you", `The application on ${location.hostname} did not go through: it needs you.`).catch(() => {});
+    } else setStatus("Pressed Submit. No confirmation seen yet: check the page.");
+    return true;
+  }
+
   async function maybeGoNext(result) {
     const p = panel;
     const box = p && p.root.getElementById("autonext");
@@ -1674,11 +2014,16 @@
       return;
     }
     await addToReview(result.review);  // optional questions and drafts: checked at the end, before Submit
-    if (atEnd) { await announceReview(); return; }
+    if (atEnd) { await announceReview(result); return; }
+    // an error can flash while a date is typed or a box hides (Huron, 2026-10-28): look again before stopping
+    if (pageErrors()) await sleep(1500);
     if (pageErrors()) { setStatus("The page shows an error on this step: fix it, then click Next yourself."); return; }
     const flow = (await chrome.storage.local.get("autoFlow").catch(() => ({}))).autoFlow || {};
     const steps = flow.host === location.hostname && Date.now() - (flow.at || 0) < FLOW_MS ? (flow.steps || 0) : 0;
-    if (autoNextCount >= 8 || steps >= 10) return;
+    if (autoNextCount >= 8 || steps >= 10) {
+      setStatus(p.status.textContent + " Stopped going on by itself after " + steps + " steps: click Next to carry on.");
+      return;
+    }
     const btn = nextButton();
     if (!btn) return;
     cancelNext = false;
@@ -1712,11 +2057,30 @@
   let lastAdd = null;
   let lastRemove = [];
   let tailoring = null;
+  // Filling before a page's own code has taken over the form breaks it for good: its dropdowns never open again
+  // (Anthropic's Greenhouse form, 2026-11-04: 156 s of "the dropdown did not open"; the same fill 10 s later took 19 s).
+  // So a young page is left alone until it has loaded and its main thread has been idle a moment. Never more than 8 s.
+  async function pageSettled() {
+    if (document.visibilityState === "hidden" || performance.now() > 20000) return;
+    const start = Date.now();
+    let quiet = 0, seen = -1;
+    while (quiet < 7 && Date.now() - start < 8000) {
+      const before = performance.now();
+      await new Promise((r) => setTimeout(r, 100));
+      const count = performance.getEntriesByType("resource").length;
+      const calm = document.readyState === "complete" && count === seen && performance.now() - before < 160;
+      quiet = calm ? quiet + 1 : 0;
+      seen = count;
+    }
+  }
+
   async function run() {
     if (running) return { ok: false, error: "already running" };
     running = true;
     const p = ensurePanel();
     p.fill.disabled = p.rescan.disabled = true;
+    setStatus("Reading the form...");
+    await pageSettled();
     const state = { seen: new Set(), filled: 0, drafted: 0, needs: [], done: [] };
     try {
       // the person's order (2026-10-07): the plain facts first, then the tailored resume, then the cover letter, then
@@ -1754,8 +2118,11 @@
       if (state.drafted) parts.push(`${state.drafted} drafted (review)`);
       if (state.needs.length) parts.push(`${state.needs.length} need you`);
       setStatus(parts.join(" · ") + ".");
+      // a question the page has since taken away (an end date hidden by "I currently work here", Huron 2026-10-28)
+      // is not one to wait for
+      const stillThere = (n) => { const el = n.entry && n.entry.els && n.entry.els[0]; return !!el && el.isConnected && (el.type === "file" || isVisible(el)); };
       lastResult = { ok: true, filled: state.filled, drafted: state.drafted, needs: state.needs.length,
-                     requiredNeeds: state.needs.filter(needIsRequired).length,
+                     requiredNeeds: state.needs.filter((n) => stillThere(n) && needIsRequired(n)).length,
                      review: [...state.needs.map((n) => (n.label || "a question") + (n.reason ? " (" + n.reason + ")" : "")),
                               ...(state.draftLabels || []).map((l) => "Drafted answer: " + l)] };
       // this site is mid-application: its next page is filled on arrival, even when the person clicks Next themselves
@@ -1767,7 +2134,7 @@
       lastRemove = state.remove || [];
       // Entries still to add (Ashby, 2026-10-06): the alert comes after they are filled, not now. The alert (a sound
       // in the background page) is never waited on for more than 3 s: it once hung and the entries were never added.
-      const fixing = addRounds < 2 && ((lastAdd && (lastAdd.experience || lastAdd.education)) || lastRemove.length);
+      const fixing = addRounds < 2 && ((lastAdd && (lastAdd.experience || lastAdd.education || lastAdd.websites)) || lastRemove.length);
       if (!fixing) {
         const kind = state.needs.length || state.drafted ? "needs_you" : "done";
         await Promise.race([alertOnce(kind, `${parts.join(", ")} on ${location.hostname}. Review, then submit yourself.`), sleep(3000)]);
@@ -1785,7 +2152,7 @@
       const add = lastAdd; lastAdd = null;
       const remove = isGoogleCareers() ? lastRemove : []; lastRemove = [];
       console.debug("[tailor] entries", JSON.stringify(add), "rounds", addRounds);
-      if (addRounds < 2 && (remove.length || (add && (add.experience || add.education)))) {
+      if (addRounds < 2 && (remove.length || (add && (add.experience || add.education || add.websites)))) {
         addRounds++;
         const held = lastResult;  // the fill's own result: used if there turns out to be nothing to fix
         lastResult = null;
@@ -1808,6 +2175,7 @@
       filledOnce = true;
       markFilled();
       stepKeys = formKeys();
+      stepName = activeStepName();
     }
   }
 
@@ -1815,7 +2183,17 @@
   // After the person has used Fill on this page, a new step appearing (they clicked Next) is filled the same way. This
   // only watches: moving between steps, and submitting, stay with the person.
   let filledOnce = false;
+  // A tab in the background draws nothing (Chrome pauses its animation frames), so a custom dropdown's list never shows
+  // there (Anthropic, 2026-10-30: twelve "the dropdown did not open" in a tab opened behind others). When the tab comes
+  // to the front, the page is filled again: answers already given are kept, the dropdowns get theirs.
+  let hiddenDropdowns = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !hiddenDropdowns || running) return;
+    hiddenDropdowns = 0;
+    setTimeout(() => { if (!running) { setStatus("Filling the dropdowns now that this tab is in front..."); run(); } }, 600);
+  });
   let stepKeys = new Set();
+  let stepName = "";
   let autoRuns = 0;
 
   function isEmptyNow(el) {
@@ -1846,7 +2224,9 @@
     let fresh = 0, gone = 0;
     for (const k of now) if (!stepKeys.has(k)) fresh++;
     for (const k of stepKeys) if (!now.has(k)) gone++;
-    if (fresh < 2 || gone < Math.max(2, stepKeys.size / 2)) return;
+    // or the site's own step name changed (Huron's "Application Questions": two dropdowns only, 2026-10-28)
+    const moved = !!activeStepName() && activeStepName() !== stepName;
+    if (!moved && (fresh < 2 || gone < Math.max(2, stepKeys.size / 2))) return;
     autoRuns++;
     setStatus("New step found: filling it...");
     run();
@@ -1855,14 +2235,29 @@
   // Structure first, as a person (or Simplify) would: one entry per resume job and degree is added before anything is
   // filled, so the new entries are filled in this same run. Before (Solace, 2026-10-06) they were added only after the
   // written answers were drafted, minutes later, and it looked as if nothing happened.
+  // Workday sections that show only their Add button, no entry yet (Huron, 2026-10-28: My Experience started empty and
+  // nothing was added): the server then asks for one entry per job and per school
+  function emptySections() {
+    if (!isWorkday()) return [];
+    const out = [];
+    for (const b of document.querySelectorAll("[data-automation-id='add-button']")) {
+      const h = groupHeading(b), g = b.closest("[role='group']");
+      const section = h === "work experience" ? "experience" : h === "education" ? "education" : h === "websites" ? "websites" : "";
+      if (section && !out.includes(section) && isVisible(b) && g &&
+          !g.querySelector("input:not([type=hidden]), textarea, button[aria-haspopup]")) out.push(section);
+    }
+    return out;
+  }
+
   async function prepareEntries() {
     if (addRounds >= 2) return;
     const fields = collectFields();
-    if (!fields.some((f) => f.section)) return;
+    const empty = emptySections();
+    if (!fields.some((f) => f.section) && !empty.length) return;
     const resp = await send({ type: "plan", payload: { url: location.href, title: document.title, page_text: pageText(), fields,
-                                                       resume_id: resumeId || "", features: ["transcript_which"] } });
+                                                       resume_id: resumeId || "", features: ["transcript_which"], empty_sections: empty } });
     const add = resp && resp.ok ? resp.data.add_entries : null;
-    if (!add || !(add.experience || add.education)) return;
+    if (!add || !(add.experience || add.education || add.websites)) return;
     addRounds++;
     setStatus("Adding entries for your jobs and degrees...");
     if (await addEntries(add)) await sleep(800);
@@ -1878,9 +2273,11 @@
       fields.forEach((f) => state.seen.add(fieldKey(f)));
       // resume_id: the resume tailored to this posting, so the form's answers follow it (bullets, degree order, offices)
       const resp = await send({ type: "plan", payload: { url: location.href, title: document.title, page_text: pageText(), fields,
-                                                         resume_id: resumeId || "", features: ["transcript_which"] } });
+                                                         resume_id: resumeId || "", features: ["transcript_which"],
+                                                         empty_sections: within ? [] : emptySections() } });
       if (!resp.ok) { setStatus(resp.error); await alertOnce("needs_you", resp.error); return { ok: false, error: resp.error }; }
       if (pass === 0) state.add = resp.data.add_entries || {};
+      setStatus(`Filling ${resp.data.actions.filter((a) => a.kind !== "skip" && a.kind !== "needs_you").length} answers on this page...`);
       state.remove = state.remove || [];
       for (const a of resp.data.actions) if (a.kind === "needs_you" && /is a project on your resume/.test(a.reason || "")) state.remove.push(a.field_id);
 
@@ -1900,6 +2297,14 @@
           if (a.kind === "fill") { fillText(entry.els[0], a.value); mark(entry, "tailor-filled", "Filled from your profile"); filled++; typed.push({ entry, info, value: a.value, key: a.reason }); state.done.push({ key: fieldKey(info), entry }); }
           else if (a.kind === "select") { (entry.els[0].tagName === "BUTTON" || entry.els[0].getAttribute("role") === "button" ? chooseButton : chooseOption)(entry, a.value); mark(entry, "tailor-filled", "Filled from your profile"); filled++; state.done.push({ key: fieldKey(info), entry }); }
           else if (a.kind === "combobox") { await (isListboxButton(entry.els[0]) ? chooseListbox(entry, a.value, a.reason) : chooseCombobox(entry, a.value, a.reason)); mark(entry, "tailor-filled", a.source === "answer_sheet" ? "Filled from your saved answer" : "Filled from your profile"); filled++; state.done.push({ key: fieldKey(info), entry }); }
+          else if (a.kind === "multi") {
+            // several picks in one search list (Workday's "Type to Add Skills"): each one the site's list has
+            const got = [];
+            for (const v of String(a.value || "").split("\n").filter(Boolean)) {
+              try { await chooseWorkdayPrompt(entry.els[0], v, a.reason); got.push(v); } catch (_) { /* not in the site's list */ }
+            }
+            if (got.length) { mark(entry, "tailor-filled", "The posting's skills you have: " + got.join(", ")); filled++; }
+          }
           else if (a.kind === "check") { setCheckbox(entry.els[0], a.value === "true"); mark(entry, "tailor-filled", "Filled from your profile"); filled++; }
           else if (a.kind === "upload") { uploads.push({ entry, info }); mark(entry, "tailor-drafting", "Your tailored resume will go here"); }
           else if (a.kind === "transcript") { await uploadTranscript(entry.els[0], a.value); mark(entry, "tailor-filled", a.value === "undergraduate" ? "Your undergraduate transcript attached" : "Your transcript attached"); filled++; }
@@ -1947,7 +2352,11 @@
 
       for (const note of within ? [] : resp.data.notes || []) {  // e.g. a work entry to add; once, whatever the pass
         // (not for one entry's editor: the other entries are added next, by Tailor itself)
-        if (!needs.some((n) => n.label === note)) needs.push({ label: note, reason: "", entry: null });
+        // "Add an entry" where the form has no Add button at all is nothing the person can do (Plaid, JazzHR, 2026-11-04)
+        const canAdd = !/^Add an? /.test(note) || deepAll("button, a, [role='button']").some((b) => isVisible(b) &&
+          !b.closest("#tailor-panel-host") && /^\+?\s*add\b/i.test(clean(b.textContent)));
+        // a later pass sees only the boxes still open, so it would count too few entries and ask for ones that are there
+        if (canAdd && !(pass > 0 && /^Add an? /.test(note)) && !needs.some((n) => n.label === note)) needs.push({ label: note, reason: "", entry: null });
       }
       let drafted = 0;
       renderNeeds(needs);
@@ -2044,8 +2453,22 @@
   // Fill on open (like Simplify; the person's choice, 2026-10-06): once per page, only on what is clearly an application
   // form (a name or email box and a few more fields), never with a Desk link already starting it, and never submits.
   let autoStarted = false;
+  // A sign-in or create-account page is not the application (Workday, 2026-11-03): nothing of the person's goes in it from
+  // here; they sign in, and the application is filled when it appears (the flow carries over to the next page).
+  const onSignInPage = () => deepAll("input").some((el) => el.type === "password" && isVisible(el));
+  let signInSaid = false;
   async function maybeAutoFill() {
     if (autoStarted || filledOnce || running || !panel || /tailor-fill=/.test(location.hash)) return;
+    if (onSignInPage()) {
+      if (!signInSaid) {
+        signInSaid = true;
+        setStatus("This site wants you to sign in first. Sign in here, and Tailor fills the application when it opens.");
+        chrome.storage.local.set({ autoFlow: { host: location.hostname, at: Date.now(), steps: 0 } }).catch(() => {});
+        if (flowHere) alertOnce("needs_you", `${location.hostname} wants you to sign in before the application.`).catch(() => {});
+      }
+      return;
+    }
+    signInSaid = false;
     const fields = collectFields();
     let looksLikeApplication = fields.length >= 6 && fields.some((f) => /first name|last name|e-?mail|r[eé]sum[eé]|legal name/i.test(f.label + " " + f.name));
     if (!looksLikeApplication && fields.length >= 2) {
@@ -2054,7 +2477,7 @@
       const flow = (await chrome.storage.local.get("autoFlow").catch(() => ({}))).autoFlow || {};
       const searchForm = !!document.querySelector("[role='search'], input[type='search']") && fields.length <= 4;
       const applyPage = /apply|application|candidate|step|questionnaire|disclosure|self-?identif/i.test(location.pathname + location.search) ||
-        hasSteps() || !!document.querySelector("input[type=file]");
+        hasSteps() || !!document.querySelector("input[type=file]") || !!flow.followedApply;  // arrived by the job's Apply link
       looksLikeApplication = flow.host === location.hostname && Date.now() - (flow.at || 0) < FLOW_MS && applyPage && !searchForm;
     }
     if (!looksLikeApplication || autoStarted) return;
@@ -2104,8 +2527,35 @@
       maybeAutoFill();
       return;
     }
+    if (flowHere && onSignInPage()) { ensurePanel(); maybeAutoFill(); return; }  // on the way to an application
     const n = deepAll("input, select, textarea").filter((e) => !SKIP_TYPES.has((e.type || "").toLowerCase())).length;
-    if (n >= 3) { ensurePanel(); maybeAutoFill(); }
+    if (n < 3) {  // a job description with no form yet: the role-fit read is the panel's whole job here
+      if (knownSite() && looksLikePosting(pageText())) { ensurePanel(); checkFit().catch(() => {}); }
+      return;
+    }
+    if (!knownSite() && !looksLikeApplicationHere()) return;  // "every careers site": not on a site's sign-in or search
+    ensurePanel();
+    checkFit().catch(() => {});
+    maybeAutoFill();
+  }
+  // a site in the manifest's list (the job sites Tailor knows); any other site comes from "Run on every careers site"
+  // or a site the person added from the toolbar, where the panel waits for an application form
+  const KNOWN = chrome.runtime.getManifest().content_scripts[0].matches.map((m) =>
+    new RegExp("^" + m.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"));
+  const knownSite = () => [location.protocol + "//" + location.hostname + location.pathname, location.origin + location.pathname].some((u) => KNOWN.some((r) => r.test(u)));
+  let flowHere = false;
+  chrome.storage.local.get("autoFlow").then((s) => {
+    const f = s.autoFlow || {};
+    flowHere = f.host === location.hostname && Date.now() - (f.at || 0) < FLOW_MS;
+    if (flowHere) maybeShowPanel();
+  }).catch(() => {});
+  function looksLikeApplicationHere() {
+    if (flowHere || /tailor-fill=/.test(location.hash)) return true;
+    const labels = deepAll("input, select, textarea").filter((e) => !SKIP_TYPES.has((e.type || "").toLowerCase()) && isVisible(e))
+      .map((e) => labelOf(e) + " " + (e.name || "") + " " + (e.id || ""));
+    const has = (re) => labels.some((l) => re.test(l));
+    return labels.length >= 4 && has(/e-?mail/i) && (has(/first.?name|last.?name|full.?name|legal name/i) || has(/r[eé]sum[eé]|\bcv\b/i)) ||
+      (!!document.querySelector("input[type=file]") && has(/r[eé]sum[eé]|\bcv\b/i));
   }
   maybeShowPanel();
   setTimeout(rememberPosting, 1500);
@@ -2119,9 +2569,24 @@
     send({ type: "autofill_ok", code: autoCode }).then(async (r) => {
       if (!r || !r.ok || !r.data || !r.data.ok) return;
       deskPosting = r.data.posting || null;
+      flowHere = true;
+      await chrome.storage.local.set({ autoFlow: { host: location.hostname, at: Date.now(), steps: 0 } }).catch(() => {});
       for (let i = 0; i < 40; i++) {  // up to 20 s for the form to render
+        if (onSignInPage()) { ensurePanel(); maybeAutoFill(); return; }  // the application is filled after they sign in
         if (collectFields().length >= 3) { ensurePanel(); await run(); return; }
         await sleep(500);
+      }
+      // the posting's own Apply link (Google Careers, 2026-11-03: the form is on another page): only a plain link whose
+      // whole words say apply; the application then opens and is filled there
+      const applyLink = deepAll("a[href]").find((a) => isVisible(a) && !a.closest("#tailor-panel-host") &&
+        /^(?:apply|apply now|apply for this job|apply to this job|apply for this role|apply for this position)$/i.test(clean(a.textContent || a.getAttribute("aria-label"))) &&
+        /^https?:/.test(a.href) && !a.href.includes("#tailor-fill"));
+      if (applyLink) {
+        ensurePanel();
+        setStatus("Opening the application form...");
+        await chrome.storage.local.set({ autoFlow: { host: location.hostname, at: Date.now(), steps: 0, followedApply: true } }).catch(() => {});
+        location.assign(applyLink.href);
+        return;
       }
       setStatus("Opened from the Tailor Desk, but no application form showed up. Click Apply on the page, then Fill this page.");
     }).catch(() => {});

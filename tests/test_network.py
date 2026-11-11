@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from tailor.config import Settings  # noqa: E402
 from tailor.fill.profile import Education, Experience, Profile, YearMonth  # noqa: E402
 from tailor.llm import StubClient  # noqa: E402
-from tailor.network import (Tie, job_ref, load_ties, ties_from_profile, parse_connections_csv, parse_search_results, same_company, contact_score, contact_ties, due_follow_ups, fill_name, location_focus,  # noqa: E402
+from tailor.network import (Tie, job_ref, load_ties, school_families, search_terms, ties_from_profile, parse_connections_csv, parse_search_results, same_company, contact_score, contact_ties, due_follow_ups, fill_name, location_focus,  # noqa: E402
                             message_drafts, metro_of, posting_contacts, posting_places, search_plan)
 from tailor.server.app import create_app  # noqa: E402
 
@@ -202,6 +202,45 @@ class SearchResultsTests(unittest.TestCase):
         self.assertNotIn("recruiter", contact_ties({"headline": "PM", "snippet": "met a recruiter"}, TIES, [], ""))
 
 
+class SchoolFamilyTests(unittest.TestCase):
+    """2026-10-25: a second university was crowded out of every search by the first one's schools and programs."""
+    TIES = [Tie("school", "Harbor Business", "Harbor School of Business", 2.6, ["harbor school of business"], "Harbor",
+                "Lakeview University", "lakeview-harbor"),
+            Tie("school", "Lakeview SOI", "Lakeview School of Information", 2.5,
+                ["lakeview university - school of information"], "SOI", "Lakeview University"),
+            Tie("program", "Ops Institute", "Ops Institute", 2.2, ["ops institute"], "Ops", "Lakeview University"),
+            Tie("school", "Lakeview University", "Lakeview University", 2.0, ["lakeview university", "lvu"], "LVU",
+                alumni_page="lakeview-university"),
+            Tie("school", "UC Riverside", "UC Riverside", 1.5, ["university of california, riverside",
+                "university of california - riverside", "uc riverside", "ucr", "ucrv"], "UCRV", alumni_page="ucriverside")]
+
+    def test_each_university_gets_its_own_searches(self):
+        fams = school_families(self.TIES)
+        self.assertEqual([f["label"] for f in fams], ["LVU (Harbor, SOI, Ops)", "UCRV"])
+        plan = search_plan("Figma", ["San Francisco", "New York"], self.TIES)
+        local = [s.label for s in plan if s.group == "Location + alumni"]
+        self.assertEqual(local, ["LVU (Harbor, SOI, Ops) alumni at Figma in San Francisco", "UCRV alumni at Figma in San Francisco",
+                                 "LVU (Harbor, SOI, Ops) alumni at Figma in New York", "UCRV alumni at Figma in New York"])
+        tools = [s.url for s in plan if "alumni tool" in s.label]
+        self.assertTrue(any("/school/ucriverside/" in u for u in tools))
+        self.assertTrue(any("/school/lakeview-university/" in u for u in tools))  # the university's own page first
+
+    def test_a_school_is_searched_by_every_name_profiles_use(self):
+        terms = search_terms(self.TIES[4])
+        self.assertEqual(terms[:2], ["UC Riverside", "UCRV"])  # an abbreviation before long names
+        self.assertIn("university of california, riverside", terms)
+        self.assertNotIn("university of california - riverside", terms)  # the same words to Google: once
+        self.assertNotIn("UCR", terms)  # three letters are too ambiguous
+        q = unquote_plus(search_plan("Figma", ["Chicago"], self.TIES[4:])[0].url)
+        self.assertIn('("UC Riverside" OR "UCRV" OR "university of california, riverside")', q)
+
+    def test_an_alum_note_says_when_the_person_graduated(self):
+        me = {"name": "Jordan Rivera", "grad": "May 2027", "study": "my MBA at Harbor", "graduated": {"UC Riverside": "2021"}}
+        alum = next(d for d in message_drafts(me, "Figma", "APM", "", self.TIES[4]) if d.relation == "alum")
+        self.assertTrue(alum.note.startswith("Hi {first_name}, we both went to UC Riverside (I graduated in 2021). "
+                                             "I'm finishing my MBA at Harbor (May 2027)"))
+
+
 class ProfileTiesTests(unittest.TestCase):
     """2026-10-16: ties come from each person's own profile; none are built into the code."""
 
@@ -246,7 +285,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn("May 2027", n["drafts"][0]["message"])
         self.assertIn("Jordan Rivera", n["drafts"][0]["message"])
         alum = next(d for d in n["drafts"] if d["relation"] == "alum")
-        self.assertIn("my MBA at " + BIZ, alum["note"])  # the person's own degree and school
+        self.assertIn(f"we both went to {BIZ}. I'm finishing my MBA there", alum["note"])  # school named once
         self.assertEqual(self.c.get(f"/api/network/posting/{self.pid}").status_code, 401)
 
     def test_saving_a_contact_scores_it_and_the_draft_fits_the_tie(self):

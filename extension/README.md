@@ -1,6 +1,7 @@
 # Tailor Assist (Chrome + Edge extension)
 
-Fills job applications from your own profile, drafts free-text answers with a local model, and **never submits**.
+Fills job applications from your own profile and drafts free-text answers with a local model. It **does not submit**
+unless you turn on **Submit for me** in Options.
 One code base (Manifest V3) works in both Chrome and Edge.
 
 ## Install (once, in each browser)
@@ -30,3 +31,14 @@ It never clicks Submit or Apply; `tests/test_extension_static.py` and the end-to
 on "Go to the next step for me", it presses a form's own Next / Continue button between steps and stops at the Review
 page (and never on school job boards, whose Continue sends your documents). It also fills custom dropdowns, Workday's
 multi-step forms and boxes inside web components (SmartRecruiters), and attaches the tailored resume and cover letter.
+
+## Submit for me (optional, off by default)
+In Options, "Submit applications for me when everything is filled" makes Tailor press the page's Submit button at the
+end of an application it filled, after a 10-second countdown with a Stop button and a notification. It still stops for
+you when a required question is empty (it never ticks "I certify" boxes), when the page has a CAPTCHA, a password box or
+an error, when it drafted written answers (unless you also allow that), on school job boards, and past your daily
+limit. Options lists what it submitted.
+
+## Every careers site (optional)
+"Run on every careers site" in Options lets the panel work on any company's own site (Chrome asks once). There it only
+appears on pages that look like an application form.

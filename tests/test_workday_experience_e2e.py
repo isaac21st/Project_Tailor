@@ -63,13 +63,17 @@ PAGE = """<!doctype html><html><head><title>My Experience - Workday</title></hea
 <div data-automation-id="applyFlowPage">
 <div data-automation-id="progressBarActiveStep">current step 2 of 5 My Experience</div>
 <h3>My Experience</h3>
+<div data-automation-id="formField-source"><label for="source--source">How Did You Hear About Us?*</label>
+  <input id="source--source" data-uxi-widget-type="selectinput" data-uxi-multiselect-id="ms-source--source" placeholder="Search"></div>
 <div role="group" id="we"><h4>Work Experience</h4><div id="we-list"></div>
   <button type="button" data-automation-id="add-button" id="add-we">Add Another</button></div>
 <div role="group" id="ed"><h4>Education</h4><div id="ed-list"></div>
   <button type="button" data-automation-id="add-button" id="add-ed">Add Another</button></div>
+<div role="group" id="ws"><h4>Websites</h4><div id="ws-list"></div>
+  <button type="button" data-automation-id="add-button" id="add-ws">Add</button></div>
 <div role="group" id="ce"><h4>Certifications</h4>
   <button type="button" data-automation-id="add-button" id="add-ce">Add</button></div>
-<div role="group"><h4>Resume/CV</h4><input type="file" id="resume" data-automation-id="file-upload-input-ref"></div>
+<div role="group" id="resume-group"><h4>Resume/CV</h4><input type="file" id="resume" data-automation-id="file-upload-input-ref"></div>
 <div data-automation-id="formField-linkedInAccount"><label for="socialNetworkAccounts--linkedInAccount">LinkedIn</label>
   <input id="socialNetworkAccounts--linkedInAccount"></div>
 </div>
@@ -81,10 +85,29 @@ const DEGREES = ["Select One", "GED", "High School", "Associates", "Bachelors", 
 function field(id, label, extra) {
   return `<div data-automation-id="formField-${id.split("--")[1]}"><label for="${id}">${label}</label><input id="${id}" ${extra || ""}></div>`;
 }
+// Huron's site (2026-10-28): its date parts sit deeper under the "From" heading, and the resume box is labelled
+// only "Upload a file (5MB max)"
+const HURON = location.pathname.startsWith("/empty");
 function dates(prefix, legend, parts) {
-  return `<fieldset data-automation-id="formField-${prefix.split("--")[1]}"><legend>${legend}</legend>` +
-    parts.map((p) => `<input id="${prefix}-dateSection${p}-input" role="spinbutton" data-automation-id="dateSection${p}-input" aria-label="${p}">`).join("") + "</fieldset>";
+  const inputs = parts.map((p) => `<input id="${prefix}-dateSection${p}-input" role="spinbutton" data-automation-id="dateSection${p}-input" aria-label="${p}">`).join("");
+  return `<fieldset data-automation-id="formField-${prefix.split("--")[1]}"><legend><label><span>${legend.replace("*", "")}<abbr>*</abbr></span></label></legend>` +
+    (HURON ? `<div><div><div id="${prefix}" role="group"><div>${inputs}</div></div></div></div>` : inputs) + "</fieldset>";
 }
+if (HURON) document.getElementById("resume-group").innerHTML = `<div data-automation-id="formField-"><p>Upload a file (5MB max)*</p>` +
+  `<div data-automation-id="attachments-FileUpload"><input type="file" id="resume" data-automation-id="file-upload-input-ref"></div><div id="uploaded"></div></div>`;
+// like Huron: an uploaded file is listed under the box and the box is emptied; a text area keeps only typing
+window.__uploads = 0;
+if (HURON) document.addEventListener("change", (e) => {
+  if (e.target.id !== "resume" || !e.target.files.length) return;
+  window.__uploads += e.target.files.length;
+  document.getElementById("uploaded").insertAdjacentHTML("beforeend", `<div>${e.target.files[0].name} Successfully Uploaded!</div>`);
+  e.target.value = "";
+}, true);
+if (HURON) document.addEventListener("input", (e) => {
+  const el = e.target; if (el.tagName !== "TEXTAREA") return;
+  if (e.inputType === "insertText" || e.inputType === "insertFromPaste") el.dataset.kept = el.value;
+  else setTimeout(() => { el.value = el.dataset.kept || ""; }, 0);
+}, true);
 function addWork() {
   const n = counter; counter += 7; works++;
   const d = document.createElement("div");
@@ -143,12 +166,42 @@ document.addEventListener("input", (e) => {
   const el = e.target; if (el.getAttribute("role") !== "spinbutton") return;
   if (e.inputType === "insertText") el.dataset.kept = el.value; else el.value = el.dataset.kept || "";
 }, true);
-addWork(); addSchool();
+// Huron's site (2026-10-28) starts with no entry at all, only the Add buttons
+if (!location.pathname.startsWith("/empty")) { addWork(); addSchool(); }
+// "How Did You Hear About Us?" in categories (Huron): the search finds nothing; the list opens on a press of the box,
+// a category shows its own options, an option clicked becomes the tag
+const SOURCES = { "Job Board": ["Indeed", "Glassdoor"], "Social Media": ["Facebook", "LinkedIn", "Twitter"], "Referral": ["Employee Referral"] };
+function sourceList(items, leaf) {
+  document.querySelectorAll(".srclist").forEach((l) => l.remove());
+  const input = document.getElementById("source--source");
+  const box = document.createElement("div"); box.className = "srclist"; box.setAttribute("role", "listbox");
+  for (const item of items) {
+    const o = document.createElement("div"); o.setAttribute("role", "option"); o.setAttribute("data-automation-id", "menuItem");
+    o.innerHTML = leaf ? `<div data-automation-id="promptLeafNode">${item}</div>` : `<div data-automation-id="promptOption">${item}</div>`;
+    o.addEventListener("click", () => {
+      window.__pressed.push("src:" + item);
+      if (!leaf) return sourceList(SOURCES[item], true);
+      const tag = document.createElement("div"); tag.setAttribute("data-uxi-widget-type", "selectinputlistitem");
+      tag.setAttribute("data-uxi-multiselect-id", "ms-source--source"); tag.className = "srctag"; tag.textContent = item;
+      input.parentElement.appendChild(tag); box.remove();
+    });
+    box.appendChild(o);
+  }
+  input.parentElement.appendChild(box);
+}
+document.getElementById("source--source").addEventListener("mousedown", () => sourceList(Object.keys(SOURCES), false));
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".srclist").forEach((l) => l.remove()); });
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   window.__pressed.push(b.id);
   if (b.id === "add-we") return addWork();
   if (b.id === "add-ed") return addSchool();
+  if (b.id === "add-ws") {  // Workday's Websites list: one URL box per press
+    const n = counter; counter += 7;
+    document.getElementById("ws-list").insertAdjacentHTML("beforeend",
+      `<div data-automation-id="formField-url"><label for="webAddress-${n}--url">URL*</label><input id="webAddress-${n}--url" aria-required="true"></div>`);
+    return;
+  }
   if (!/--degree$/.test(b.id)) return;
   document.querySelectorAll("[role=listbox]").forEach((l) => l.remove());
   const ul = document.createElement("ul"); ul.setAttribute("role", "listbox"); ul.id = b.id + "-list";
@@ -192,7 +245,8 @@ class WorkdayExperienceE2E(unittest.TestCase):
         pdf = settings.output_dir / "current_resume.pdf"
         pdf.write_bytes(b"%PDF-1.4\n% e2e test resume\n")
         cls.api_port, cls.site_port = free_port(), free_port()
-        app = create_app(settings, StubClient("Fine."), PROFILE, TOKEN, pdf)
+        app = create_app(settings, StubClient("Fine."), PROFILE.model_copy(update={"how_heard": "LinkedIn", "portfolio_url": "https://janedoe.example.com",
+                                                                          "github_url": "https://github.com/janedoe"}), TOKEN, pdf)
         cls.api = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=cls.api_port, log_level="error"))
         threading.Thread(target=cls.api.run, daemon=True).start()
         cls.site = http.server.ThreadingHTTPServer(("127.0.0.1", cls.site_port), _Site)
@@ -229,9 +283,9 @@ class WorkdayExperienceE2E(unittest.TestCase):
         cls.site.shutdown()
         cls.tmp.cleanup()
 
-    def fill(self, auto_next: bool):
+    def fill(self, auto_next: bool, path: str = "/en-US/careers/job/apply"):
         page = self.ctx.new_page()
-        page.goto(f"http://{HOST}:{self.site_port}/en-US/careers/job/apply")
+        page.goto(f"http://{HOST}:{self.site_port}{path}")
         page.wait_for_selector("#tailor-panel-host", state="attached", timeout=10000)
         page.evaluate("""on => { const r = document.querySelector('#tailor-panel-host').shadowRoot;
                                  r.getElementById('autonext').checked = on; r.getElementById('fill').click(); }""", auto_next)
@@ -253,6 +307,8 @@ class WorkdayExperienceE2E(unittest.TestCase):
             if (m) { (out[m[1]] = out[m[1]] || {})[m[2]] = v(el); } } return Object.values(out); };
           return { work: by(/^workExperience-(\\d+)--(.+?)(?:-input)?$/), school: by(/^education-(\\d+)--(.+?)(?:-input)?$/),
                    linkedin: document.getElementById('socialNetworkAccounts--linkedInAccount').value,
+                   source: [...document.querySelectorAll('.srctag')].map(t => t.textContent),
+                   websites: [...document.querySelectorAll('[id^=webAddress-]')].map(i => i.value),
                    pressed: window.__pressed }; }""")
 
     def test_work_and_education_entries(self):
@@ -280,6 +336,27 @@ class WorkdayExperienceE2E(unittest.TestCase):
         self.assertEqual(got["pressed"].count("add-ed"), 2)
         self.assertNotIn("add-ce", got["pressed"])  # Certifications: never
         self.assertNotIn("next", got["pressed"])  # auto-next off: stays on the step
+        self.assertEqual(got["source"], ["LinkedIn"])  # found inside "Social Media"
+        self.assertEqual(got["websites"], ["https://janedoe.example.com", "https://github.com/janedoe"])  # Huron, 2026-10-30
+        self.assertEqual(got["pressed"].count("add-ws"), 2)
+        self.assertEqual([p for p in got["pressed"] if p.startswith("src:")][-1], "src:LinkedIn")
+        page.close()
+
+    def test_a_my_experience_step_with_no_entries_gets_every_job_and_school(self):  # Huron, 2026-10-28
+        page = self.fill(auto_next=False, path="/empty/en-US/careers/job/apply")
+        got = self.entries(page)
+        self.assertEqual([w["companyName"] for w in got["work"]], ["University of Michigan", "Summit Club", "Acme Rental Group", "Acme Rental Group"])
+        self.assertEqual([s["schoolName"] for s in got["school"]],
+                         ["University of Michigan", "University of Michigan", "University of California, Davis"])
+        self.assertEqual(got["pressed"].count("add-we"), 4)
+        self.assertEqual(got["pressed"].count("add-ed"), 3)
+        first = got["work"][0]  # dates read from the "From" heading above them
+        self.assertEqual((first["startDate-dateSectionMonth"], first["startDate-dateSectionYear"]), ("05", "2026"))
+        self.assertEqual(page.evaluate("() => window.__uploads"), 1)  # "Upload a file": the resume, once
+        page.wait_for_timeout(500)
+        self.assertTrue(got["work"][1]["roleDescription"].startswith("• "), got["work"][1])  # typed, so it stays
+        self.assertIn("Built a brand plan", got["work"][1]["roleDescription"])
+        self.assertNotIn("add-ce", got["pressed"])
         page.close()
 
 

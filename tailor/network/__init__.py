@@ -256,29 +256,33 @@ def search_plan(company: str, places: list[str], ties: list[Tie], max_per_group:
     city_places = [p for p in places if p != "Remote"][:2]
     schools = sorted([t for t in ties if t.kind in ("school", "program", "club")], key=lambda t: -t.weight)
     employers = sorted([t for t in ties if t.kind == "employer"], key=lambda t: -t.weight)
+    families = school_families(schools)
     out: list[Search] = []
+    caps = {"Alumni at the company": max_per_group + 4}
 
     def add(group: str, label: str, url: str, why: str) -> None:
-        if sum(1 for s in out if s.group == group) < max_per_group:
+        if sum(1 for s in out if s.group == group) < caps.get(group, max_per_group):
             out.append(Search(len(out) + 1, group, label, url, why))
 
+    # each school family (a university and the schools and programs within it) gets its own searches, so a second
+    # university is never crowded out by the first one's programs
     for city in city_places:
-        for t in schools:
-            add("Location + alumni", f"{t.short} alumni at {company} in {city}",
-                _google(f'site:linkedin.com/in {co} "{t.search}" "{city}"'),
+        for f in families:
+            add("Location + alumni", f"{f['label']} alumni at {company} in {city}",
+                _google(f'site:linkedin.com/in {co} {f["query"]} "{city}"'),
                 f"Same school and same office: the warmest ask for a referral to the {city} team.")
     for city in city_places:
         for t in employers:
             add("Location + past coworkers", f"Former {t.short} people at {company} in {city}",
                 _google(f'site:linkedin.com/in {co} "{t.search}" "{city}"'),
                 f"You both worked at {t.short}, and they sit in the {city} office.")
-    for t in schools:  # a school's own alumni tool first: it lists every alum at the company, sortable by city
-        if t.alumni_page:
+    for f in families:  # a school's own alumni tool first: it lists every alum at the company, sortable by city
+        for t in f["pages"]:
             add("Alumni at the company", f"{t.short} alumni tool: {company}",
                 f"https://www.linkedin.com/school/{quote_plus(t.alumni_page)}/people/?keywords=" + quote_plus(company),
                 f"LinkedIn's alumni page for {t.short}, filtered to the company: sort by where they live.")
-    for t in schools:
-        add("Alumni at the company", f"{t.short} alumni at {company}", _linkedin_people(f'{co} "{t.search}"'),
+    for f in families:
+        add("Alumni at the company", f"{f['label']} alumni at {company}", _linkedin_people(f"{co} {f['query']}"),
             "Alumni answer alumni: a shared school is the easiest opener.")
     for t in employers:
         add("Past coworkers at the company", f"Former {t.short} people at {company}", _linkedin_people(f"{co} {t.search}"),
@@ -294,6 +298,61 @@ def search_plan(company: str, places: list[str], ties: list[Tie], max_per_group:
                 + (f' "{city_places[0]}"' if city_places else "")),
         "The recruiter for the role's office.")
     return out
+
+
+def university_of(t: Tie | None, ties: list[Tie]) -> Tie | None:
+    """The university a school or program is part of (its "within" tie), else the tie itself: messages name the
+    university ("we both went to the University of Michigan"), not one school inside it."""
+    if t is None or not t.within:
+        return t
+    return next((x for x in ties if x.label == t.within), t)
+
+
+def search_terms(t: Tie) -> list[str]:
+    """The ways a profile names a school: its search name plus its distinctive alternate names ("UCD",
+    "University of California, Davis"), never short ambiguous ones ("u of m")."""
+    key = lambda x: re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", x.lower())).strip()  # noqa: E731
+    out, seen = [t.search], {key(t.search)}
+    acronyms, phrases = [], []
+    for w in t.words:
+        w = w.strip()
+        if w.isalpha() and 4 <= len(w) <= 6 and " " not in w:
+            acronyms.append(w.upper())
+        elif len(w.split()) >= 2 and len(w) >= 10:
+            phrases.append(w)
+    for w in acronyms + phrases:  # an abbreviation first: profiles use it most ("UCD '21")
+        k = key(w)  # Google ignores punctuation in a quoted phrase: "California, Santa" = "California Santa"
+        if k not in seen and not any(k in x or x in k for x in seen):
+            seen.add(k)
+            out.append(w)
+    return out[:4]
+
+
+def school_families(schools: list[Tie]) -> list[dict]:
+    """Schools grouped by university: a tie "within" another belongs to that one's family. Each family: a label
+    ("Michigan (Harbor, SOI)"), one search query naming the university every way profiles do, its weight, and the
+    LinkedIn alumni pages its members have (the strongest two)."""
+    by_label = {t.label: t for t in schools}
+    groups: dict[str, list[Tie]] = {}
+    for t in schools:
+        root = t.within if t.within in by_label else t.label
+        groups.setdefault(root, []).append(t)
+    out = []
+    for root, members in groups.items():
+        top = by_label.get(root) or members[0]
+        kids = [m for m in sorted(members, key=lambda m: -m.weight) if m is not top]
+        terms = search_terms(top) if top.kind != "club" else [top.search]
+        if top.label not in by_label or top.kind == "club":  # no university tie to stand for the family
+            terms = [x for m in members for x in search_terms(m)][:4]
+        query = terms[0] if len(terms) == 1 else "(" + " OR ".join(f'"{x}"' for x in terms) + ")"
+        if len(terms) == 1:
+            query = f'"{terms[0]}"'
+        label = top.short + (f" ({', '.join(k.short for k in kids)})" if kids else "")
+        # the university's own alumni page (every alum, undergrads too) and its schools' pages, strongest first
+        pages = ([top] if top.alumni_page else []) + [m for m in kids if m.alumni_page][:2]
+        out.append({"label": label, "query": query, "weight": max(m.weight for m in members), "pages": pages,
+                    "members": [m.label for m in members]})
+    return sorted(out, key=lambda f: -f["weight"])
 
 
 # ---- the recruiter a posting names ---------------------------------------------------------------------------------
@@ -347,8 +406,13 @@ def message_drafts(person: dict, company: str, title: str, place: str = "", tie:
     where = f" on the {place} team" if place and place != "Remote" else ""
     link_line = f" Here is the posting: {link}" if link else ""
     school = tie.label if tie else person.get("school", "my school")
+    year = (person.get("graduated") or {}).get(school)  # a school the person already finished: say when
+    shared = f"we both went to {school}" + (f" (I graduated in {year})" if year else "")
     past = coworker.label if coworker else person.get("past", "a past employer")
     study = person.get("study", "my degree")        # "my MBA at Example Business School"
+    # the alum already knows the school: "I'm finishing my MBA there" rather than naming it twice
+    study_there = (f"my {person['degrees']} there" if person.get("degrees") and school == person.get("school")
+                   else study)
     student = person.get("student", "a graduate student")  # "an Example Business School MBA student"
     ref_line = f" (job ID {ref})" if ref else ""
     drafts = [
@@ -359,8 +423,8 @@ def message_drafts(person: dict, company: str, title: str, place: str = "", tie:
               f"for {role} at {company}{where}{ref_line}.{link_line}\n\nSince you're there, would you be comfortable "
               f"referring me? To make it easy, I can send my resume and a two-line summary you can paste into the referral "
               f"form. If you'd rather not, I'd still love 15 minutes to hear what the team is like.\n\nThank you!\n{me}"),
-        Draft("alum", f"Fellow alum ({school})",
-              f"Hi {{first_name}}, we share {school}. I'm finishing {study} ({grad}) and applying for {role} at "
+        Draft("alum", f"Fellow alum ({re.sub(r'^the ', '', school)})",
+              f"Hi {{first_name}}, {shared}. I'm finishing {study_there} ({grad}) and applying for {role} at "
               f"{company}. Would you be open to a quick chat about your team?",
               f"Hi {{first_name}},\n\nI'm {me}, finishing {_school_line(person)} in {grad}, and I'm applying for {role} at "
               f"{company}{where}. I saw that you're also from {school}, so I hoped you might share how you found your way to "

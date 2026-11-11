@@ -68,7 +68,7 @@ document.addEventListener("input", (e) => {
   const ul = document.createElement("ul"); ul.className = "results"; ul.setAttribute("role", "listbox"); ul.id = "lb" + Math.random().toString(36).slice(2);
   box.setAttribute("aria-controls", ul.id); box.setAttribute("aria-expanded", "true");
   for (const s of SCHOOLS.filter((x) => x.toLowerCase().includes(q))) {
-    const li = document.createElement("li"); li.setAttribute("role", "option"); li.textContent = s;
+    const li = document.createElement("li"); li.setAttribute("role", "option"); li.innerHTML = `<div>${s}</div><div>United States</div><div>school.edu</div>`;
     li.addEventListener("click", () => { box.value = s; ul.remove(); box.setAttribute("aria-expanded", "false"); });
     ul.appendChild(li);
   }

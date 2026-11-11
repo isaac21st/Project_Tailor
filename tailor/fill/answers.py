@@ -57,7 +57,8 @@ _YEARS_AFTER = re.compile(r"\s*[- ]?(?:year|yr|month)s?\b", re.I)
 BEYOND_RESUME = re.compile(
     r"nothing to do with (?:your|the) (?:resume|cv|job|work|career)|(?:not|isn['’]?t) (?:on|in) your (?:resume|cv)|"
     r"outside (?:of )?(?:work|your (?:resume|cv|job))|beyond your (?:resume|cv)|fun fact|\bhobb(?:y|ies)\b|"
-    r"(?:in|with) your (?:free|spare) time|for fun\b|something (?:about you )?(?:we|that) (?:wouldn['’]?t|won['’]?t|can['’]?t|"
+    r"(?:in|with) your (?:free|spare) time|for fun\b|\bfavou?rite\b|\bsuper ?power\b|\bpet peeve|\blast book\b|"
+    r"\bmost (?:memorable|embarrassing)\b|something (?:about you )?(?:we|that) (?:wouldn['’]?t|won['’]?t|can['’]?t|"
     r"don['’]?t) (?:know|find|learn|see)", re.I)
 BEYOND_RESUME_ASK = ("only you know this (it is about you beyond your resume): type what to say in the Tailor chat, "
                      "then click Write it")
@@ -101,6 +102,95 @@ def unsupported_numbers(text: str, allowed_source: str) -> list[str]:
     return bad
 
 
+# Results belong to where they happened (2026-10-28, Palantir): asked to write about a student group from the person's
+# note, the model added "839% more traffic and eight investments", which were another organization's results on the
+# resume. Every number was in the profile, so the number check passed. This check follows which organization each
+# sentence is about (a sentence that names none continues the one before) and wants its numbers from that one.
+_COUNT_WORDS = {"two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+                "ten": "10", "eleven": "11", "twelve": "12", "twenty": "20", "fifty": "50", "hundred": "100"}
+_COUNT_WORD = re.compile(r"\b(" + "|".join(_COUNT_WORDS) + r")\b", re.I)
+_NAME_STOP = {"the", "and", "for", "of", "at", "inc", "llc", "group", "university", "school", "college", "business",
+              "tech", "technology", "club", "team", "project", "prototype", "company", "corp", "corporation", "center",
+              "institute", "program", "student", "students", "data", "design", "product", "research", "global",
+              "international", "enhancing", "movement", "information", "management", "consulting", "services"}
+
+
+def _numbers_in(text: str) -> set[str]:
+    out = {_canon(m) for m in _NUMBER.findall(text)} | {_COUNT_WORDS[w.lower()] for w in _COUNT_WORD.findall(text)}
+    return {n for n in out if n}
+
+
+def _name_keys(name: str) -> set[str]:
+    """How a sentence may name an organization: its whole name, the part in parentheses, and its distinctive words
+    ("Summit-Club" -> summit-club, summit club, ipo; "Acme Rental Group" -> acme, rental)."""
+    low = name.lower()
+    keys = {low.strip(), re.sub(r"\s*\(.*?\)", "", low).strip()} | {x.strip() for x in re.findall(r"\((.*?)\)", low)}
+    keys |= {k.replace("-", " ") for k in list(keys)}
+    keys |= {w for w in re.findall(r"[a-z0-9][a-z0-9&'-]*", low.replace("-", " ")) if len(w) >= 3 and w not in _NAME_STOP}
+    return {k for k in keys if len(k) >= 3}
+
+
+def _subjects(profile: Profile, instruction: str = "") -> list[tuple[str, set[str], str]]:
+    """(name, keys, its own facts) for each employer, project and school, plus each name in the person's note that
+    the resume does not have ("BLDA"): that one's facts are the note."""
+    by_name: dict[str, list[str]] = {}
+    for x in profile.experience:
+        by_name.setdefault(x.employer, []).append(" ".join([x.title, *x.bullets]))
+    for e in profile.education:
+        by_name.setdefault(e.school, []).append(" ".join([e.degree, e.field or "", *e.bullets]))
+    out = [(n, _name_keys(n), " ".join(t)) for n, t in by_name.items()]
+    known = set().union(*(k for _, k, _ in out)) if out else set()
+    for tok in dict.fromkeys(re.findall(r"\b[A-Z][A-Z0-9&]{2,}\b", instruction)):
+        if tok.lower() not in known:
+            out.append((tok, {tok.lower()}, instruction))
+    # a key two organizations share ("michigan") names neither
+    counts: dict[str, int] = {}
+    for _, keys, _ in out:
+        for k in keys:
+            counts[k] = counts.get(k, 0) + 1
+    return [(n, {k for k in keys if counts[k] == 1}, f) for n, keys, f in out]
+
+
+def _names(sentence: str, keys: set[str]) -> bool:
+    """A whole name in any case; one word of a name only as a name, capitalized ("Center", not "operations")."""
+    text = sentence.replace("-", " ")
+    for k in keys:
+        k = k.replace("-", " ")
+        for m in re.finditer(rf"(?<![A-Za-z0-9]){re.escape(k)}(?![A-Za-z0-9])", text, re.I):
+            if " " in k or m.group(0)[0].isupper():
+                return True
+    return False
+
+
+def misattributed(text: str, profile: Profile, instruction: str = "", shared: str = "") -> list[tuple[str, str, str]]:
+    """(number, the organization the sentence is about, where the number really is) for each result moved from one
+    organization to another. `shared` is text whose numbers may go anywhere (the question, the posting)."""
+    subjects = _subjects(profile, instruction)
+    if not subjects:
+        return []
+    note_names = [n for n, keys, _ in subjects if _names(instruction, keys)]
+    free = _numbers_in(shared)
+    bad, current = [], None
+    for sent in _sentences(text):
+        named = [x for x in subjects if x[1] and _names(sent, x[1])]
+        if len(named) > 1:  # a sentence about two places at once: not checked
+            current = None
+            continue
+        if named:
+            current = named[0]
+        if current is None:
+            continue
+        name, _, own = current
+        allowed = _numbers_in(own) | free
+        if name in note_names or not note_names:  # the note's numbers are about what the note names
+            allowed |= _numbers_in(instruction)
+        for n in sorted(_numbers_in(sent) - allowed):
+            home = next((m for m, _, f in subjects if m != name and n in _numbers_in(f)), "")
+            if home:  # a number found nowhere is the plain number check's job
+                bad.append((n, name, home))
+    return bad
+
+
 def length_hint(*texts: str) -> tuple[int | None, int | None, int | None]:
     """(max sentences, max words, max characters) the form asks for: "Please share 3-4 sentences", "in 100 words or
     less", "500 characters max", "one paragraph"."""
@@ -124,6 +214,15 @@ def _sentences(text: str) -> list[str]:
 
 def _drop_sentences_with(text: str, bad: list[str]) -> str:
     return " ".join(s for s in _sentences(text) if not any(b in s for b in bad)).strip()
+
+
+def _drop_misattributed(text: str, profile: Profile, instruction: str = "", shared: str = "") -> str:
+    """Leaves out each sentence that gives one organization another's results (judged in context, sentence by sentence)."""
+    kept: list[str] = []
+    for sent in _sentences(text):
+        if not misattributed(" ".join(kept + [sent]), profile, instruction, shared):
+            kept.append(sent)
+    return " ".join(kept).strip()
 
 
 def _cut_to(text: str, limit: int) -> str:
@@ -253,6 +352,7 @@ def draft_answer(client: LLMClient, profile: Profile, question: str, page_text: 
     # numbers the applicant wrote in their own past answers are theirs too
     allowed = f"{profile.facts_text()}\n{excerpt}\n{question}\n{instruction}\n" + " ".join(e["text"] for e in examples or [])
     prompt = build_prompt(profile, question, excerpt, max_chars, instruction, current, hint, examples)
+    shared = f"{excerpt}\n{question}"
     n_sent, n_words, n_chars = length_hint(question, hint, instruction)
     n_sent = n_sent or (None if n_words else DEFAULT_SENTENCES)
     n_words = n_words or DEFAULT_WORDS
@@ -264,6 +364,9 @@ def draft_answer(client: LLMClient, profile: Profile, question: str, page_text: 
         problems = []
         if bad := unsupported_numbers(text, allowed):
             problems.append(f"You used numbers that are not in APPLICANT FACTS: {', '.join(bad)}. Remove them")
+        if moved := misattributed(text, profile, instruction, shared):
+            problems.append("You gave one organization another's results: " + "; ".join(
+                f"{n} is from {home}, not {name}" for n, name, home in moved) + ". Keep each result with where it happened")
         if cap and len(text) > cap:
             problems.append(f"The answer is {len(text)} characters; keep it under {cap}")
         if n_sent and len(_sentences(text)) > n_sent:
@@ -284,6 +387,10 @@ def draft_answer(client: LLMClient, profile: Profile, question: str, page_text: 
     if bad := unsupported_numbers(text, allowed):
         warnings.append(f"removed a sentence using numbers not in your profile: {', '.join(bad)}")
         text = _drop_sentences_with(text, bad)
+    if moved := misattributed(text, profile, instruction, shared):
+        warnings.append("removed a sentence giving one place another's results: " + "; ".join(
+            f"{n} is from {home}, not {name}" for n, name, home in moved))
+        text = _drop_misattributed(text, profile, instruction, shared)
     if n_sent and len(_sentences(text)) > n_sent:
         warnings.append(f"kept the first {n_sent} sentences")
         text = " ".join(_sentences(text)[:n_sent])

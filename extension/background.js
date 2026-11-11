@@ -253,6 +253,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           return sendResponse({ ok: true });
         }
+        case "everywhere": {  // "Run on every careers site" in Options: the panel on any https page (it shows only on application forms)
+          const id = "everywhere";
+          const have = await chrome.scripting.getRegisteredContentScripts({ ids: [id] }).catch(() => []);
+          if (msg.on === false) {
+            if (have.length) await chrome.scripting.unregisterContentScripts({ ids: [id] });
+            return sendResponse({ ok: true, on: false });
+          }
+          if (!(await chrome.permissions.contains({ origins: ["https://*/*"] }))) return sendResponse({ ok: false, error: "not allowed" });
+          if (!have.length) {
+            await chrome.scripting.registerContentScripts([{ id, matches: ["https://*/*"], js: ["content.js"], css: ["panel.css"],
+              allFrames: true, runAt: "document_idle", persistAcrossSessions: true }]);
+          }
+          return sendResponse({ ok: true, on: true });
+        }
+        case "everywhere_state": {
+          const have = await chrome.scripting.getRegisteredContentScripts({ ids: ["everywhere"] }).catch(() => []);
+          return sendResponse({ ok: true, on: have.length > 0 });
+        }
         case "transcript": {  // the person's transcript PDF, for an upload box that asks for one
           const res = await api("/api/transcript" + (msg.which === "undergraduate" ? "?which=undergraduate" : ""));
           const name = ((res.headers.get("content-disposition") || "").match(/filename="?([^";]+)"?/) || [])[1] || "Transcript.pdf";
@@ -311,6 +329,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const data = await res.json();
           return sendResponse({ ok: true, data });
         }
+        case "applied_list": {  // Workday's Candidate Home: the roles it lists as sent are applied on the Desk
+          const res = await api("/api/desk/applied-list", { method: "POST", body: JSON.stringify(msg.payload) });
+          const data = await res.json();
+          for (const m of data.marked || []) {
+            chrome.notifications.create("tailor-applied-" + m.id, { type: "basic", iconUrl: "icons/icon128.png",
+              title: "Marked applied on the Tailor Desk", message: `${m.company ? m.company + ": " : ""}${m.title}` });
+          }
+          return sendResponse({ ok: true, data });
+        }
         case "applied": {  // a "thank you for applying" page: mark the posting applied on the Desk
           const key = "answers:" + (msg.payload.host || "");
           const kept = (await chrome.storage.session.get(key))[key] || {};
@@ -336,6 +363,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         case "tailor": {
           const res = await api("/api/tailor", { method: "POST", body: JSON.stringify(msg.payload) });
+          return sendResponse({ ok: true, data: await res.json() });
+        }
+        case "fit": {  // how this role fits the person: read only
+          const res = await api("/api/fit", { method: "POST", body: JSON.stringify(msg.payload) });
           return sendResponse({ ok: true, data: await res.json() });
         }
         case "confirm_skill": {  // "I have this" on a keyword the posting wants

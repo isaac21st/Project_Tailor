@@ -1,0 +1,23 @@
+AALIYAH JOHNSON
+aaliyah.j@example.com | 555.010.9090 | linkedin.com/in/aaliyah-example
+
+EDUCATION
+Howard University, Washington, DC
+Master of Education, Curriculum and Instruction, May 2020
+Spelman College, Atlanta, GA
+Bachelor of Arts, English, May 2016
+
+WORK EXPERIENCE
+Lincoln Example High School, Washington, DC
+English Teacher, August 2016 - June 2024
+* Taught 5 sections of 11th grade English to 140 students per year
+* Raised state test proficiency from 58% to 74% over three years
+* Designed a writing curriculum adopted by the department
+
+Bright Futures Tutoring, Remote
+Program Coordinator, July 2024 - Present
+* Manage 25 volunteer tutors serving 200 students
+* Built enrollment reports in Excel and Salesforce for the board
+
+SKILLS
+Curriculum design, data analysis, Excel, Salesforce, Spanish (conversational)

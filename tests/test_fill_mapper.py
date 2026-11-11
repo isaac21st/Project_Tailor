@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tailor.fill.forms import FieldOption, FormField  # noqa: E402
-from tailor.fill.mapper import match_option, plan_field, plan_fields_with_notes  # noqa: E402
+from tailor.fill.mapper import _unlisted_school, match_option, plan_field, plan_fields_with_notes  # noqa: E402
 from tailor.fill.profile import Education, Experience, Profile, YearMonth  # noqa: E402
 from tailor.fill.sensitive import classify, classify_text  # noqa: E402
 
@@ -150,6 +150,30 @@ class SensitiveTests(unittest.TestCase):
         self.assertEqual(plan_field(f("Degree Status", type="combobox", **ms), p).value, "Now attending")
         self.assertEqual(plan_field(f("Degree Status", type="combobox", **ba), p).value, "Graduated")
         self.assertEqual(plan_field(f("School name", type="combobox", **ba), p).value, "Other College, Davis")
+        # Workday: entries saved as UCD, MBA school, MS school are written in the person's order, whole (2026-10-30)
+        from tailor.fill.mapper import entries_to_add, plan_fields_with_notes
+        wd = [f("School or University", name="education-9--schoolName", section="education", section_index=0,
+                value="Other College, Davis"),
+              f("Degree", type="combobox", name="education-9--degree", section="education", section_index=0, value="PhD")]
+        wd[1] = wd[1].model_copy(update={"id": "d9"})
+        acts, _ = plan_fields_with_notes(wd, p)
+        self.assertEqual([a.value for a in acts], ["Example University", "Master of Business Administration"])
+        # Workday's Websites list: the person's portfolio, then GitHub, each once (Huron, 2026-10-30)
+        from tailor.fill.mapper import entries_to_add, plan_fields_with_notes
+        w = p.model_copy(update={"portfolio_url": "https://example.com", "github_url": "https://github.com/example"})
+        self.assertEqual(entries_to_add([], w, empty={"websites"}), {"websites": 2})
+        boxes = [f("URL", name="webAddress-51--url", value="https://example.com"), f("URL", name="webAddress-58--url")]
+        boxes[1] = boxes[1].model_copy(update={"id": "w2"})
+        acts, _ = plan_fields_with_notes(boxes, w)
+        self.assertEqual([(a.kind, a.value) for a in acts], [("skip", None), ("fill", "https://github.com/example")])
+        self.assertEqual(entries_to_add(boxes, w), {})
+        # Workday (Huron, 2026-10-30): saved entries in another order, two schools of one university, degrees as
+        # abbreviations; each entry's degree follows the school it holds, never its place
+        for i, (school, want) in enumerate([("Other College, Davis PhD History", "Bachelor of Arts"),
+                                            ("Example University MBA Business", "Master of Business Administration"),
+                                            ("Example University School of Information MS Information", "Master of Science")]):
+            self.assertEqual(plan_field(f("Degree", type="combobox", section="education", section_index=i, entry_hint=school), p).value,
+                             want, school)
         yn = opts("Yes", "No")
         self.assertEqual(plan_field(f("Attended university degree program?", type="radio", options=yn, required=True), p).value, "0")
 
@@ -380,7 +404,7 @@ class WorkdayTests(unittest.TestCase):
         self.assertEqual(self.plan(f("Location", **cur)).value, "Chicago, IL")
         self.assertEqual(self.plan(f("From", type="month", **cur)).value, "2026-05")
         self.assertEqual(self.plan(f("Role Description", type="textarea", **cur)).value,
-                         "Built a dashboard Cut reporting time by 40%")
+                         "• Built a dashboard\n• Cut reporting time by 40%")
         cb = self.plan(f("I currently work here", type="checkbox", **cur))
         self.assertEqual((cb.kind, cb.value), ("check", "true"))
         past = dict(section="experience", section_index=1)
@@ -1072,3 +1096,276 @@ class KeepWhatIsThereTests(unittest.TestCase):
         e = f("Employer name", type="text", value="Wrong Co", section="experience")
         acts = plan_fields_with_notes([e], PROFILE, url="https://www.google.com/about/careers/applications/apply/1")[0]
         self.assertNotEqual(acts[0].reason, "already answered: kept as it is")
+
+
+class CompanyQuestionTests(unittest.TestCase):
+    """Accenture's Workday questions (2026-10-30): the person's rule answers questions about ties to the company "No";
+    an interview-accommodation question is not the disability self-identification."""
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+    RULE = {"company_questions": "No", "disability": "Yes", "in_person_max_percent": 100}
+
+    def ask(self, q, standing):
+        return plan_field(f(q, type="select", options=self.YN, required=True), PROFILE, standing=standing)
+
+    def test_ties_to_the_company_get_the_persons_rule(self):
+        for q in ("Have you entered into a non-disclosure, non-solicit, or non-compete agreement of any kind?",
+                  "If you work for a client of Acme, are you currently working on a project with Acme?",
+                  "Are you currently employed by or interning for any government?",
+                  "In the past three years, have you been employed by any state-owned entity or government entity?"):
+            self.assertEqual(self.ask(q, self.RULE).value, "No", q)
+            if "employed by" not in q:  # "employed by X?" has its own rule: No when X is not on the resume
+                self.assertNotEqual(self.ask(q, {}).value, "No", q)  # without the rule: not answered for them
+
+    def test_a_public_employer_has_its_own_answer(self):  # the person works at a public university (2026-10-30)
+        gov = {**self.RULE, "government_employment": "Yes"}
+        for q in ("Are you currently employed by or interning for any government?",
+                  "In the past three years, have you been employed by any state-owned entity or government entity?"):
+            self.assertEqual(self.ask(q, gov).value, "Yes", q)
+        self.assertEqual(self.ask("Have you entered into a non-compete agreement?", gov).value, "No")
+
+    def test_an_accommodation_question_is_left_to_the_person(self):
+        a = self.ask("Do you require any reasonable accommodations to participate in the interview process? We support "
+                     "candidates with disabilities or health conditions.", self.RULE)
+        self.assertEqual((a.kind, a.category), ("needs_you", "accommodation"))  # never the saved disability answer
+
+    def test_on_site_requirements_follow_the_in_person_limit(self):
+        q = "Are you able to meet the on-site requirements (i.e.: in office/hybrid/travel) on an ongoing basis?"
+        self.assertEqual(self.ask(q, self.RULE).value, "Yes")
+        self.assertEqual(self.ask(q, {**self.RULE, "in_person_max_percent": 80}).kind, "needs_you")
+
+
+class ConsentRuleTests(unittest.TestCase):
+    """The person's consent rules (2026-10-30): acknowledge notices and terms, No to texts, accept arbitration. A
+    signature and an age statement stay theirs; with no rules saved, every legal box stays theirs."""
+    RULES = {"acknowledge_notices": "Yes", "sms_opt_in": "No", "arbitration": "Accept"}
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+
+    def plan(self, label, type="checkbox", options=None, standing=None):
+        return plan_field(f(label, type=type, options=options or [], required=True), PROFILE,
+                          standing=self.RULES if standing is None else standing)
+
+    def test_the_rules_answer_the_legal_boxes(self):
+        self.assertEqual(self.plan("Applicant Privacy Acknowledgement").kind, "check")
+        self.assertEqual(self.plan("Yes, I have read and consent to the terms and conditions.").kind, "check")
+        self.assertEqual(self.plan("Would you like to receive SMS or WhatsApp updates?", "select", self.YN).value, "No")
+        agree = [FieldOption(value="a", label="I agree"), FieldOption(value="b", label="I do not agree")]
+        self.assertEqual(self.plan("Agreement to Arbitrate", "select", agree).value, "a")
+
+    def test_signatures_and_no_rules_stay_with_the_person(self):
+        self.assertEqual(self.plan("Electronic signature", "text").kind, "needs_you")
+        self.assertEqual(self.plan("Applicant Privacy Acknowledgement", standing={}).kind, "needs_you")
+
+
+class MoreAutomaticTests(unittest.TestCase):
+    """Gaps from five applications (2026-10-30): coded language options, state residency, a portfolio question that
+    mentions a password, and a background-check acknowledgement box."""
+    P = PROFILE.model_copy(update={"state": "California", "languages": "Mandarin (intermediate), English (native)",
+                                   "portfolio_url": "https://example.net/"})
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+
+    def test_language_options_with_codes(self):
+        q = "Language Skill(s) (Check all that apply)"
+        kinds = [plan_field(f(o, type="checkbox", context=q), self.P).kind for o in ("English (ENG)", "Spanish (SPA)", "Mandarin (MAN)")]
+        self.assertEqual(kinds, ["check", "skip", "check"])
+
+    def test_state_residency(self):
+        self.assertEqual(plan_field(f("Are you a resident of California?✱", type="radio", options=self.YN), self.P).value, "Yes")
+        self.assertEqual(plan_field(f("Are you a resident of New York?", type="radio", options=self.YN), self.P).value, "No")
+
+    def test_a_portfolio_link_that_mentions_a_password(self):
+        a = plan_field(f("Please provide a link to your portfolio. If the file is password protected, please also provide "
+                         "your password.", required=True), self.P)
+        self.assertEqual((a.kind, a.value), ("fill", "https://example.net/"))
+        self.assertEqual(plan_field(f("Password", type="password"), self.P).kind, "needs_you")
+
+    def test_a_background_check_acknowledgement(self):
+        box = f("I acknowledge that employment is contingent upon a reference check and a background check.", type="checkbox")
+        self.assertEqual(plan_field(box, self.P, standing={"background_check_ok": "Yes"}).kind, "check")
+        self.assertEqual(plan_field(box, self.P, standing={}).kind, "needs_you")
+
+
+class InPersonTests(unittest.TestCase):
+    """The person (2026-11-03): go with what the job asks of time in person or travel; five days is fine."""
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+    S = {"in_person_max_percent": 100, "relocation_ok_cities": ["San Francisco", "New York"]}
+
+    def ask(self, q, standing=None):
+        return plan_field(f(q, type="radio", options=self.YN), PROFILE, standing=self.S if standing is None else standing)
+
+    def test_time_in_person_and_travel(self):
+        for q in ("Are you excited to work in-office five days a week?", "Are you able to come into the office four days per week?",
+                  "Are you open to working in-person in one of our offices 25% of the time?",
+                  "Are you willing to travel up to 50% for client work?",
+                  "This position requires you to be in our San Mateo, CA, headquarters office. Will you commit to this?"):
+            self.assertEqual(self.ask(q).value, "Yes", q)
+            self.assertEqual(self.ask(q, {**self.S, "in_person_max_percent": 80}).kind, "needs_you", q)
+
+    def test_an_office_in_a_city_they_did_not_list_stays_theirs(self):
+        q = "This position requires you to be in our Boise, ID, headquarters office. Will you commit to this?"
+        self.assertEqual(self.ask(q).kind, "needs_you")
+
+
+class StandingWordingTests(unittest.TestCase):
+    """Avalere (2026-11-03): an acknowledgement asked as Yes/No, and pronoun boxes among long EEO text."""
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+
+    def test_a_background_acknowledgement_asked_as_yes_no(self):
+        q = "I acknowledge that consideration for employment is contingent upon a reference check and a background check."
+        a = plan_field(f(q, type="radio", options=self.YN), PROFILE, standing={"background_check_ok": "Yes"})
+        self.assertEqual(a.value, "Yes")
+
+    def test_pronoun_boxes_among_long_eeo_text(self):
+        ctx = "Pronouns (check all that apply) We ask for voluntary gender and veteran information."
+        st = {"pronouns": "They/them", "gender": "Female"}
+        kinds = [plan_field(f(o, type="checkbox", name="pronouns", context=ctx), PROFILE, standing=st).kind for o in ("He/him", "They/them")]
+        self.assertEqual(kinds, ["skip", "check"])
+
+    def test_an_accommodation_question_takes_only_its_own_answer(self):
+        q = "Do you require any reasonable accommodations to participate in the interview process?"
+        self.assertEqual(plan_field(f(q, type="select", options=self.YN), PROFILE, standing={"disability": "Yes"}).kind, "needs_you")
+        self.assertEqual(plan_field(f(q, type="select", options=self.YN), PROFILE, standing={"interview_accommodation": "No"}).value, "No")
+
+
+class HowHeardTests(unittest.TestCase):
+    def pick(self, value, labels):
+        from tailor.fill.mapper import match_option
+        hit = match_option(value, [FieldOption(value=l, label=l) for l in labels], "how_heard")
+        return hit.label if hit else None
+
+    def test_the_nearest_true_answer(self):
+        self.assertEqual(self.pick("LinkedIn", ["Referral", "LinkedIn Job Posting", "Other"]), "LinkedIn Job Posting")
+        self.assertEqual(self.pick("LinkedIn", ["Referral", "Online job board", "Other"]), "Online job board")
+        self.assertEqual(self.pick("LinkedIn", ["Referral", "Career fair", "Other"]), "Other")
+        self.assertIsNone(self.pick("LinkedIn", ["Referral", "Career fair"]))
+
+
+class ThingsTailorAlreadyKnowsTests(unittest.TestCase):
+    """The commonest questions left on real forms (benchmark, 2026-11-04)."""
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+    P = PROFILE.model_copy(update={"city": "Los Gatos", "country": "United States", "experience": [
+        Experience(employer="Acme Corp", title="Analyst", start=YearMonth(year=2022, month=1), end=YearMonth(year=2024, month=1))]})
+
+    def ask(self, q, **kw):
+        return plan_field(f(q, type="radio", options=self.YN), self.P, **kw)
+
+    def test_experience_minimums_from_the_resume(self):
+        self.assertEqual(self.ask("Do you have at least 6 months of full-time, paid experience?").value, "Yes")
+        self.assertEqual(self.ask("Do you have a minimum of 2 years of professional experience?").value, "Yes")
+        self.assertEqual(self.ask("Do you have at least 5 years of work experience?").kind, "needs_you")  # short: they answer
+        self.assertEqual(self.ask("Do you have at least 2 years of management consulting experience?").kind, "needs_you")
+
+    def test_where_the_person_lives(self):
+        self.assertEqual(self.ask("Are you based in the SF Bay Area or New York?").value, "Yes")
+        self.assertEqual(self.ask("Are you located in Chicago or Boston?").value, "No")
+        self.assertEqual(self.ask("Do you currently reside in the country this role is located?", us_role=True).value, "Yes")
+
+    def test_other_wordings(self):
+        self.assertEqual(self.ask("Have you ever been previously employed by Stripe?").value, "No")
+        self.assertEqual(self.ask("Are you subject to a non-competition agreement?", standing={"company_questions": "No"}).value, "No")
+        self.assertEqual(plan_field(f("Current/Last Company"), self.P).value, "Acme Corp")
+
+    def test_clearance_only_from_the_persons_own_answer(self):
+        q = "Do you currently hold an active US security clearance?"
+        self.assertEqual(self.ask(q).kind, "needs_you")
+        self.assertEqual(self.ask(q, standing={"security_clearance": "No"}).value, "No")
+
+
+class SmallWordingTests(unittest.TestCase):
+    def test_zipcode_and_living_in_the_us_and_pay(self):
+        p = PROFILE.model_copy(update={"postal_code": "90210", "city": "Springfield", "country": "United States"})
+        self.assertEqual(plan_field(f("Zipcode"), p).value, "90210")
+        yn = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+        self.assertEqual(plan_field(f("Do you currently reside in the United States of America?", type="radio", options=yn), p).value, "Yes")
+        q = f("What is your desired salary?")
+        self.assertEqual(plan_field(q, p).kind, "needs_you")
+        self.assertEqual(plan_field(q, p, standing={"desired_compensation": "$120,000"}).value, "$120,000")
+
+    def test_an_answer_inside_several_options_is_not_guessed(self):
+        o = lambda *xs: [FieldOption(value=x, label=x) for x in xs]  # noqa: E731
+        split = o("East Asian (Chinese, Japanese)", "South Asian (Indian)", "Southeast Asian (Filipino)", "White")
+        self.assertIsNone(match_option("Asian", split))
+        self.assertEqual(match_option("East Asian", split).label, "East Asian (Chinese, Japanese)")
+        self.assertEqual(match_option("Asian", o("Asian (Not Hispanic or Latino)", "White")).label, "Asian (Not Hispanic or Latino)")
+        self.assertEqual(match_option("East Asian", o("Asian", "White")).label, "Asian")
+        self.assertEqual(match_option("East Asian", o("Asian (Not Hispanic or Latino)", "White")).label, "Asian (Not Hispanic or Latino)")
+        self.assertEqual(match_option("East Asian", o("Asian / Pacific Islander", "White")).label, "Asian / Pacific Islander")
+        self.assertIsNone(match_option("East Asian", o("White", "Black")))
+
+    def test_a_list_that_stops_at_states(self):
+        o = lambda *xs: [FieldOption(value=x, label=x) for x in xs]  # noqa: E731
+        self.assertEqual(match_option("San Francisco, California", o("California, United States", "Baja California, Mexico"), "location").label,
+                         "California, United States")
+        self.assertEqual(match_option("San Francisco, CA", o("San Francisco, CA, USA", "California, United States"), "location").label,
+                         "San Francisco, CA, USA")
+        self.assertIsNone(match_option("San Francisco, California", o("Francisco Morazan, Honduras", "Shan, Myanmar"), "location"))
+
+    def test_other_school_only_when_the_school_is_not_on_the_list(self):
+        names = ["Zhongbo Institute", "Did not attend university", "Other - School Not Listed"]
+        o = [FieldOption(value=x, label=x) for x in names]
+        q = f("Which university are you currently attending or did you last attend?", type="select", options=o)
+        self.assertEqual(plan_field(q, PROFILE).value, "Other - School Not Listed")
+        named = [FieldOption(value=x, label=x) for x in ("University of Michigan - Ann Arbor", "University of Michigan - Flint", "Other")]
+        self.assertIsNone(_unlisted_school("University of Michigan", named))
+        self.assertIsNone(_unlisted_school("University of Michigan School of Information", named))
+        self.assertEqual(_unlisted_school("Rice University", named).label, "Other")
+
+    def test_how_heard_checklist_and_preferred_start_date(self):
+        p = PROFILE.model_copy(update={"how_heard": "LinkedIn", "available_start": "2027-05-01"})
+        ask = "How did you hear about this opportunity? (select all that apply)"
+        self.assertEqual(plan_field(f("LinkedIn", type="checkbox", context=ask), p).kind, "check")
+        self.assertEqual(plan_field(f("Indeed", type="checkbox", context=ask), p).kind, "skip")
+        self.assertNotEqual(plan_field(f("Please provide your preferred start date (month/year).", required=True), p).kind, "needs_you")
+
+    def test_worked_at_a_company_or_one_it_acquired(self):
+        yn = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+        q = f("Do you currently, or have you previously, worked at Capital One or a company acquired by Capital One as an employee, contractor, consultant, or temp?", type="select", options=yn)
+        self.assertEqual(plan_field(q, PROFILE).value, "No")
+
+    def test_hourly_pay_is_never_turned_into_a_yearly_figure(self):
+        p = PROFILE
+        hourly = {"desired_compensation": "$30 per hour"}
+        self.assertEqual(plan_field(f("What is your desired salary?"), p, standing=hourly).value, "$30 per hour")
+        self.assertEqual(plan_field(f("Desired annual salary"), p, standing=hourly).kind, "needs_you")
+        self.assertEqual(plan_field(f("Desired hourly pay", type="number"), p, standing=hourly).value, "30")
+        self.assertEqual(plan_field(f("Desired salary", type="number"), p, standing=hourly).kind, "needs_you")
+        self.assertEqual(plan_field(f("Desired salary", type="number"), p, standing={"desired_compensation": "$120,000"}).value, "120000")
+
+    def test_saved_clearance_and_accommodation_answers(self):
+        yn = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+        saved = {"security_clearance": "No", "interview_accommodation": "No"}
+        for q in ("Do you currently hold an active US security clearance?",
+                  "Do you require any accommodations during the interview process?"):
+            self.assertEqual(plan_field(f(q, type="radio", options=yn), PROFILE, standing=saved).value, "No", q)
+        eligible = f("Are you eligible to obtain the security clearance specified in the job description?", type="radio", options=yn)
+        self.assertEqual(plan_field(eligible, PROFILE, standing=saved).kind, "needs_you")
+
+
+class MoreWordingTests(unittest.TestCase):
+    YN = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+
+    def test_currently_working_at_a_company_not_on_the_resume(self):
+        q = f("Have you ever, or are you currently working at Stripe in any capacity (ie: employee or contingent worker)?", type="radio", options=self.YN)
+        self.assertEqual(plan_field(q, PROFILE).value, "No")
+
+    def test_office_choices_use_the_persons_cities(self):
+        p = PROFILE.model_copy(update={"location_preferences": ["New York", "Chicago"]})
+        for label in ("Which office location are you applying to?", "Please select desired work location", "From where do you intend to work?"):
+            opts = [FieldOption(value=c, label=c) for c in ("Boston", "New York", "Chicago")]
+            self.assertEqual(plan_field(f(label, type="select", options=opts), p).value, "New York", label)
+
+    def test_days_from_the_office(self):
+        q = f("Working from the office at least 3 days per week is a requirement for this role. Will you be able to?", type="radio", options=self.YN)
+        self.assertEqual(plan_field(q, PROFILE, standing={"in_person_max_percent": 100}).value, "Yes")
+
+    def test_eighteen_from_a_finished_degree_and_personal_data_consent(self):
+        from tailor.fill.profile import Education
+        p = PROFILE.model_copy(update={"education": [Education(school="State University", degree="Bachelor of Arts")]})
+        self.assertEqual(plan_field(f("Are you 18 years of age or older?", type="select", options=self.YN), p).value, "Yes")
+        self.assertEqual(plan_field(f("Allow us to process your personal information.", type="checkbox"), PROFILE, standing={"acknowledge_notices": "Yes"}).kind, "check")
+
+
+class AccommodationWordingTests(unittest.TestCase):
+    def test_the_laws_wording_is_not_an_accommodation_question(self):
+        yn = [FieldOption(value="Yes", label="Yes"), FieldOption(value="No", label="No")]
+        q = f("Will you be able to work from the office at least 3 days per week, with or without a reasonable accommodation?", type="radio", options=yn)
+        self.assertEqual(plan_field(q, PROFILE, standing={"in_person_max_percent": 100}).value, "Yes")

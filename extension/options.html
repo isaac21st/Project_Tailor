@@ -26,6 +26,26 @@
   <button id="save">Save</button><button id="check" class="secondary">Test connection</button>
   <div class="msg" id="connMsg"></div>
 
+  <h2>Sites</h2>
+  <label style="font-weight:400"><input type="checkbox" id="everywhere"> Run on every careers site</label>
+  <div class="hint">Tailor already works on Greenhouse, Lever, Workday, Ashby, iCIMS, SmartRecruiters and about 25 more.
+    With this on it also works on any other company's site (Chrome asks you once to allow it). The panel only shows
+    up on pages that look like an application form.</div>
+  <div class="msg" id="sitesMsg"></div>
+
+  <h2>Submit for me</h2>
+  <label style="font-weight:400"><input type="checkbox" id="autoSubmit"> Submit applications for me when everything is filled</label>
+  <div class="hint">Off: Tailor stops at Review and you click Submit. On: at the end of an application Tailor filled, it
+    presses the page's Submit button after a 10-second countdown (a Stop button and a notification come with it).
+    It still does not submit if a required question is empty (including "I certify" boxes, which it never ticks), if the
+    page has a CAPTCHA, a password box or an error, on school job boards, or past your daily limit.</div>
+  <label style="font-weight:400"><input type="checkbox" id="autoSubmitDrafts"> Also when it wrote answers to open
+    questions (drafted by the local model; otherwise it waits for you to read them)</label>
+  <label for="autoSubmitCap">Most applications submitted for me per day</label>
+  <input type="text" id="autoSubmitCap" value="10" style="width:80px">
+  <div class="msg" id="submitMsg"></div>
+  <div class="hint" id="submitLog"></div>
+
   <h2>Alert sounds</h2>
   <div class="hint">Upload any audio file, up to 30 seconds (a song clip works). Leave empty to use the built-in beeps.</div>
   <div class="slot">

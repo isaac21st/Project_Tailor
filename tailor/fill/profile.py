@@ -50,6 +50,8 @@ class Experience(BaseModel):
     current: bool = False
     kind: Literal["job", "project"] = "job"
     bullets: list[str] = Field(default_factory=list)
+    # for a form's "Role Description": these bullets tailored to the posting (auto.role_descriptions), when there is one
+    description: list[str] = Field(default_factory=list)
 
 
 class Profile(BaseModel):
@@ -84,6 +86,8 @@ class Profile(BaseModel):
     education: list[Education] = Field(default_factory=list)
     experience: list[Experience] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    # the posting's most-wanted skills the person shows (auto.wanted_skills), for a form's skills box; set per posting
+    wanted_skills: list[str] = Field(default_factory=list)
 
     @property
     def full_name(self) -> str:
@@ -213,7 +217,7 @@ def profile_from_resume(resume: Resume, overrides: dict[str, str] | None = None,
     linkedin = next((c.url for c in head.contact if c.url and "linkedin.com" in c.url), None)
     portfolio = next((c.url for c in head.contact if c.url and c.url.startswith("http")
                       and "linkedin.com" not in c.url), None)
-    first, _, last = head.name.partition(" ")
+    first, _, last = head.name.split(",")[0].strip().partition(" ")  # "Maria Santos, RN": the name, not the credential
 
     education: list[Education] = []
     experience: list[Experience] = []
@@ -256,7 +260,8 @@ def profile_from_resume(resume: Resume, overrides: dict[str, str] | None = None,
 # ---- per posting: the person's cities in the order this posting offers them ----
 
 BAY_AREA = ["San Francisco", "South San Francisco", "Mountain View", "San Jose", "Sunnyvale", "Palo Alto", "San Bruno",
-            "Menlo Park", "Redwood City", "Cupertino", "Santa Clara", "Oakland", "San Mateo", "Foster City"]
+            "Menlo Park", "Redwood City", "Cupertino", "Santa Clara", "Oakland", "San Mateo", "Foster City",
+            "Los Gatos", "Campbell", "Los Gatos", "Milpitas", "Fremont", "Hayward", "Berkeley", "Burlingame", "San Carlos"]
 _PLACES = BAY_AREA + ["New York", "Chicago", "Seattle", "Boston", "Austin", "Los Angeles", "Washington", "Atlanta",
                       "Denver", "Dallas", "Houston", "Miami", "Philadelphia", "Remote"]
 

@@ -2,7 +2,7 @@
 
 A job-application assistant that runs on your own computer. It tailors a one-page resume to each posting, fills
 application forms in your own browser, finds roles that fit you, and helps you find people to ask for a referral.
-**It never submits anything:** you review every application and click Submit yourself.
+**It submits only if you turn that on:** by default you review every application and click Submit yourself.
 
 - **Tailor Desk** (`http://127.0.0.1:8765/desk`): save postings (PDFs, links, or straight from a job page), see their
   deadlines and requirements, and get a tailored resume and cover letter for each one.
@@ -35,8 +35,9 @@ left for you.
    PLAYWRIGHT_BROWSERS_PATH=~/project_tailor_data/browsers ~/project_tailor_data/venv/bin/python -m playwright install chromium
    ```
    (`bash scripts/setup_mac.sh` does these steps.)
-2. **Make your profile.** `~/project_tailor_data/venv/bin/python scripts/new_profile.py` copies the example person in
-   `examples/profile/` into your data folder. Replace them with yourself:
+2. **Make your profile.** `~/project_tailor_data/venv/bin/python scripts/new_profile.py --resume my_resume.pdf` reads your
+   resume (PDF, Word or text) and copies the example person's preferences into your data folder. Without `--resume` it
+   copies the example resume too. Read the result once, then make the preferences yours:
    - `base_resume.json` is your resume, in the structure shown (sections EDUCATION, PROFESSIONAL EXPERIENCE,
      PROJECT EXPERIENCE, SKILLS; dates like `May 2026 - Present` or `Expected May 2027`; `**bold**` marks tools).
    - `profile_overrides.json`, `standing_answers.json` and `tailoring_rules.json` are your preferences: see
@@ -49,6 +50,26 @@ left for you.
 6. In Chrome open `chrome://extensions`, turn on Developer mode, **Load unpacked** the `extension` folder, open the
    extension's Options and paste the token from `~/project_tailor_data/server_token.txt`.
 7. Open `http://127.0.0.1:8765/desk`. The **My info** tab holds the form answers your resume does not show.
+
+## Set up (Windows 10 / 11)
+
+1. Install [Python 3.12 or 3.13](https://www.python.org/downloads/windows/) (tick "Add python.exe to PATH") and Chrome,
+   and get this project (`git clone https://github.com/<you>/Project_Tailor.git`, or Code > Download ZIP).
+2. Moving from another computer? There, run `python scripts/bundle_my_data.py`: it packs your data folder (profile, Desk,
+   searches, tailored resumes) into one zip, without the parts each computer makes for itself. Move the zip yourself
+   (USB stick or your own cloud drive) and delete it afterwards: it holds your resume and answers.
+3. In PowerShell, from the project folder:
+   ```
+   powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Bundle C:\path\project_tailor_data_bundle.zip
+   ```
+   (leave out `-Bundle` on a first install, then make your profile with `scripts\new_profile.py --resume my_resume.pdf`
+   as in step 2 above, using `%USERPROFILE%\project_tailor_data\venv\Scripts\python.exe`).
+4. Optional: [Ollama for Windows](https://ollama.com/download/windows), then `ollama pull qwen3:8b`.
+5. Start the server: `powershell -ExecutionPolicy Bypass -File scripts\start_windows.ps1`. Add `-Install` to start it
+   hidden at every login (a launcher in your Startup folder, no administrator rights), `-Uninstall` to stop that,
+   `-Model stub` to run without Ollama.
+6. Load the extension and paste the token as in step 6 above; the token is in
+   `%USERPROFILE%\project_tailor_data\server_token.txt` (a new computer makes its own).
 
 ## Tests
 
@@ -70,6 +91,18 @@ against the owner's own resume skip themselves when there is none.
 
 Tailoring only chooses, orders and trims what your resume already says, plus wordings you approved; every result is
 checked against your base resume (no new facts, numbers or skills), or the untailored resume is used instead.
+
+## Measuring it
+
+`python scripts/benchmark_fill.py --per-ats 12` runs the extension on real public forms as the made-up person in
+`examples/profile`, with its own throwaway server and data, and every request carrying that person's details, every
+upload and every submit stopped. It writes a scorecard (fields filled, kept by the site, forms with nothing left, time)
+and the list of what to fix next. Workday needs a signed-in account, so it is not scored by this yet.
+
+## The tailoring API (first version)
+
+`python scripts/run_api.py` serves the engine on `http://127.0.0.1:8770/docs`: `/v1/tailor`, `/v1/score` and
+`/v1/fill-plan`. It is stateless and needs a key (`--new-key`, then `TAILOR_API_KEYS`). See `tailor/api/__init__.py`.
 
 ## Sharing a copy
 

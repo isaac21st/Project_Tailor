@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Tailor Assist",
-  "version": "0.10.14409",
-  "description": "Fills job applications from your own profile, drafts free-text answers with a local model, and never submits.",
+  "version": "0.11.11242",
+  "description": "Fills job applications from your own profile and drafts free-text answers with a local model. Submits only if you turn on Submit for me.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",

@@ -95,7 +95,7 @@ class RealResumeTests(unittest.TestCase):
 
     def test_facts_text_carries_confirmed_details(self):
         text = self.p.facts_text()
-        for needle in ("Claude Code", "Tisa Johnson-Hooper", "88.4%", "60 competing teams"):
+        for needle in ("Claude Code", "Example Person", "88.4%", "40 competing teams"):
             self.assertIn(needle, text)
 
 

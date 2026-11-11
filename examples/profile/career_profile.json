@@ -1,0 +1,47 @@
+{
+ "positioning": "Early-career analyst who pairs operations experience with data work.",
+ "not_only": [
+  "software engineer"
+ ],
+ "recruiting_note": "Judge roles on fit and responsibilities, not on brand.",
+ "tracks": [
+  {
+   "id": "operations",
+   "name": "Operations consulting",
+   "priority": 1,
+   "firms": [
+    "Example Advisors"
+   ],
+   "role_terms": [
+    "operations consultant",
+    "operations analyst"
+   ],
+   "industry_terms": [
+    "process improvement",
+    "operational excellence",
+    "supply chain"
+   ],
+   "emphasize": [
+    "operations"
+   ],
+   "evidence": [
+    "Example"
+   ],
+   "language": [
+    "process improvement"
+   ],
+   "positioning": "Lead with the measurable operations results."
+  }
+ ],
+ "needs": [],
+ "entry_kinds": {},
+ "context": [],
+ "never_claim": [],
+ "outside_targets": [
+  "investment banking"
+ ],
+ "not_my_function": [
+  "software engineer",
+  "registered nurse"
+ ]
+}

@@ -1,0 +1,21 @@
+Wei Chen
+wei.chen@example.com  555-010-7788  github.com/weichen-example
+
+Experience
+Northwind Software                                Seattle, WA
+Senior Software Engineer                          Jan 2021 - Present
+- Built a Kubernetes deployment pipeline in Go that cut release time from 2 days to 30 minutes
+- Led migration of 40 microservices to AWS, lowering hosting costs by 18%
+- Mentored 4 junior engineers and ran weekly design reviews
+Contoso Labs                                      Portland, OR
+Software Engineer                                 Jul 2017 - Dec 2020
+- Developed REST APIs in Python and PostgreSQL serving 2 million requests per day
+- Added automated tests that raised coverage from 45% to 85%
+
+Education
+Oregon State University                           Sep 2013 - Jun 2017
+Bachelor of Science in Computer Science
+
+Technical Skills
+Languages: Go, Python, SQL
+Infrastructure: AWS, Kubernetes, Docker, Terraform

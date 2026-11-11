@@ -45,7 +45,7 @@ _HEADINGS: dict[str, str] = {
     "responsibilities": "responsibilities", "work you’ll do": "responsibilities", "work you'll do": "responsibilities",
     "what you’ll do": "responsibilities", "what you'll do": "responsibilities",
     "position summary": "summary", "the opportunity": "summary", "you are": "required", "we are": "summary",
-    "the team": "summary", "qualifications": "other", "qualification": "other",
+    "the team": "summary", "qualifications": "required", "qualification": "required",
     "a successful candidate would possess these skills": "skills",
     "the successful candidate will possess": "skills",
     # more of the headings real postings use (2026-10-06: Roblox's "You Will:" read as plain text, so its duties

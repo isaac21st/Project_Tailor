@@ -9,6 +9,8 @@ endpoint that does, and the extension contains no code that clicks Submit.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 import hashlib
 import io
 import json
@@ -32,7 +34,9 @@ from ..fill.sensitive import classify_text
 from ..llm import LLMClient
 from ..llm.clients import StubClient
 from ..resume import wordings
-from ..resume.auto import has_job_description, load_bank, tailor_resume
+from ..resume.auto import confirmed_skills, has_job_description, load_bank, tailor_resume
+from ..resume.career import best_track, load_career, path_for as career_path
+from ..resume.fit import assess_fit
 from ..resume.rules import load_rules
 from ..resume.schema import Resume
 from .desk import register_desk
@@ -71,6 +75,8 @@ class FillRequest(_FromPage):
     resume_id: str = ""  # the resume tailored to this posting: the form's answers then follow it
     fields: list[FormField] = Field(default_factory=list)
     features: list[str] = Field(default_factory=list, max_length=20)  # what this extension version can do
+    # sections the page shows with only an Add button, no entry yet (Huron's Workday, 2026-10-28): "experience", "education"
+    empty_sections: list[Literal["experience", "education", "websites"]] = Field(default_factory=list, max_length=3)
 
 
 class FillResponse(BaseModel):
@@ -243,6 +249,17 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
             return None
         return None
 
+    def own_letter(url: str) -> str:
+        """A letter the person (or someone writing for them) saved on the Desk for this job, matched by job link."""
+        from ..jobs.search import job_key
+        from .desk import DeskStore
+
+        key = job_key(url)
+        try:
+            return next((p["letter"] for p in DeskStore(settings).load() if key and job_key(p.get("url") or "") == key and p.get("letter")), "")
+        except Exception:
+            return ""
+
     def saved_posting(url: str) -> str:
         """The full posting saved for this job (Desk first, then the role search), matched by job link. An embedded
         application form (Greenhouse job_app on a company site) shows only the questions, not the job description."""
@@ -366,7 +383,52 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
             return ""
         return ", ".join(dict.fromkeys(cities))
 
-    def profile_for(resume_id: str, page_text: str) -> Profile:
+    desc_cache: dict[str, dict] = {}
+
+    def described(experience: list, posting: str, title: str) -> list:
+        """Each job's Role Description tailored to the posting (auto.role_descriptions), kept per posting."""
+        from ..fill.profile import titleize
+        from ..resume.auto import role_descriptions
+
+        if base_resume is None or not posting.strip():
+            return experience
+        key = hashlib.sha1((title + "\n" + posting[:20000]).encode("utf-8", "ignore")).hexdigest()
+        if key not in desc_cache:
+            try:
+                desc_cache[key] = role_descriptions(base_resume, posting, title=title, settings=settings)
+            except Exception as e:  # never in the way of filling the form: the resume's own bullets then
+                print(f"fill: role descriptions unavailable ({type(e).__name__}: {e})", flush=True)
+                desc_cache[key] = {}
+            while len(desc_cache) > 20:
+                desc_cache.pop(next(iter(desc_cache)))
+        over_path = settings.profile_dir / "profile_overrides.json"
+        names = (json.loads(over_path.read_text(encoding="utf-8")) if over_path.exists() else {}).get("name_overrides")
+        out = []
+        for x in experience:
+            hit = next((v for (et, rt), v in desc_cache[key].items() if rt == x.title and titleize(et, names) == x.employer), None)
+            out.append(x.model_copy(update={"description": hit}) if hit else x)
+        return out
+
+    skills_cache: dict[str, list[str]] = {}
+
+    def skills_wanted(posting: str, title: str) -> list[str]:
+        """The posting's most-wanted skills the person shows (auto.wanted_skills), kept per posting."""
+        from ..resume.auto import wanted_skills
+
+        if base_resume is None or not posting.strip():
+            return []
+        key = hashlib.sha1((title + "\n" + posting[:20000]).encode("utf-8", "ignore")).hexdigest()
+        if key not in skills_cache:
+            try:
+                skills_cache[key] = wanted_skills(base_resume, posting, title=title, settings=settings)
+            except Exception as e:  # never in the way of filling the form
+                print(f"fill: wanted skills unavailable ({type(e).__name__}: {e})", flush=True)
+                skills_cache[key] = []
+            while len(skills_cache) > 20:
+                skills_cache.pop(next(iter(skills_cache)))
+        return skills_cache[key]
+
+    def profile_for(resume_id: str, page_text: str, title: str = "") -> Profile:
         """The profile the form is filled from: built from the resume tailored to this posting when there is one (its
         bullets in the role descriptions, its degree first), with the person's cities ranked by the posting's offices."""
         from ..fill.profile import profile_from_resume, rank_locations
@@ -392,7 +454,9 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
                     posting = (tailored_dir / f"{resume_id}.posting.txt").read_text(encoding="utf-8") + "\n" + page_text
             except Exception as e:  # an old or broken file: the usual profile
                 print(f"fill: tailored profile unavailable ({type(e).__name__})", flush=True)
-        return base.model_copy(update={"location_preferences": rank_locations(base.location_preferences, posting)})
+        return base.model_copy(update={"location_preferences": rank_locations(base.location_preferences, posting),
+                                       "experience": described(base.experience, posting, title),
+                                       "wanted_skills": skills_wanted(posting, title)})
 
     def cover_rule(actions: list[Action], fields: dict[str, FormField]) -> list[Action]:
         """Cover letters: written and attached on every form that takes one (profile_overrides "cover_letters":
@@ -444,7 +508,7 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
     def fill_plan(req: FillRequest) -> FillResponse:
         role = found_role(req.url)
         page_place = us_places(req.page_text) if role is None else ""
-        plan_profile = profile_for(req.resume_id, req.page_text)
+        plan_profile = profile_for(req.resume_id, req.page_text, req.title)
         actions, notes = plan_fields_with_notes(req.fields, plan_profile, load_sheet(), url=req.url, standing=load_standing(),
                                                 us_role=role is not None or bool(page_place),
                                                 role_location=(role or {}).get("location", "") or page_place)
@@ -483,7 +547,7 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
                                             "reason": "a transcript: none is saved (profile/transcript.pdf)"})
                        if a.kind == "transcript" and a.field_id in fields_by_id else a for a in actions]
         labels = {f.id: (f.label or f.name or f.id) for f in req.fields}
-        add = entries_to_add(req.fields, plan_profile)
+        add = entries_to_add(req.fields, plan_profile, empty=set(req.empty_sections))
         entries = {s: len({f.section_index for f in req.fields if f.section == s}) for s in ("education", "experience")}
         # no personal data: how many entries the page has and how many the plan asks the extension to add
         print(f"fill-plan: {req.url[:70]} | {len(req.fields)} fields | entries {entries} | add {add}", flush=True)
@@ -507,6 +571,15 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
                             break
                 if pick:
                     break
+        if pick is None and req.key == "your consent rule":
+            # a consent list whose words load only when it opens ("I acknowledge and agree", Anthropic's arbitration
+            # agreement, 2026-10-30): the person's yes or no, in the list's own words
+            from ..fill.mapper import _AFFIRM, _DECLINE
+
+            want = _AFFIRM if norm(value) in ("yes", "accept", "agree", "true") else _DECLINE
+            pick = next((o for o in opts if want.search(o.label.strip())), None)
+            if pick is None and len(opts) == 1 and want is _AFFIRM:  # one choice only: the agreement's own words
+                pick = opts[0]
         if pick is None and req.key.startswith("location_pref_") and profile is not None:
             n = int(req.key.rsplit("_", 1)[1]) - 1  # the n-th of the person's cities that this list has
             have = [o for c in profile.location_preferences if (o := match_option(c, opts, "city_list"))]
@@ -594,6 +667,8 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
 
         overrides = settings.profile_dir / "profile_overrides.json"
         stamp = int(overrides.stat().st_mtime) if overrides.exists() else 0
+        if career_path(settings).exists():
+            stamp += int(career_path(settings).stat().st_mtime)
         url = re.sub(r"#.*$", "", req.url or "") if "#/" not in (req.url or "") else req.url
         return f"{job_key(url) or url}|{base_sig}|{stamp}"
 
@@ -660,11 +735,12 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
             final = tailored_dir / f"{rep.job_id}.pdf"
             final.parent.mkdir(parents=True, exist_ok=True)
             out.replace(final)
-            (tailored_dir / f"{rep.job_id}.json").write_text(json.dumps(rep.as_dict(), indent=2), encoding="utf-8")
+            report = {**rep.as_dict(), "fit": fit_for(req.page_text, req.title, req.url)}
+            (tailored_dir / f"{rep.job_id}.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
             # what the form answers follow for this posting: the tailored resume itself, and the posting (its offices)
             (tailored_dir / f"{rep.job_id}.resume.json").write_text(result.resume.model_dump_json(), encoding="utf-8")
             (tailored_dir / f"{rep.job_id}.posting.txt").write_text(req.page_text[:6000], encoding="utf-8")
-            response = TailorResponse(applied=True, id=rep.job_id, summary=rep.summary(), report=rep.as_dict())
+            response = TailorResponse(applied=True, id=rep.job_id, summary=rep.summary(), report=report)
             tailored[rep.job_id] = response
             remember_tailored(req, response)
         try:  # keywords this posting asks for that have no AI wording yet: write them for next time
@@ -678,6 +754,24 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
         except Exception:
             pass
         return response
+
+    def fit_for(text: str, title: str, url: str) -> dict | None:
+        """How this role fits the person; None without a career profile, or when the text is not a job description."""
+        career = load_career(settings)
+        if career is None or base_resume is None:
+            return None
+        try:
+            return assess_fit(base_resume, text, title=title, company=url, career=career, confirmed=confirmed_skills(settings))
+        except Exception as e:  # the fit is advice: it never gets in the way of tailoring or filling
+            print(f"fit check failed: {type(e).__name__}: {e}", flush=True)
+            return None
+
+    @app.post("/api/fit", dependencies=[Depends(require_token)])
+    def fit(req: TailorRequest) -> dict:
+        """The role-fit read of a posting, on its own: nothing is tailored and nothing is saved."""
+        saved = saved_posting(req.url)
+        text = saved if len(saved) > 500 and not shows_posting(req.page_text, saved) else req.page_text
+        return {"fit": fit_for(text, req.title, req.url)}
 
     @app.post("/api/skills/confirm", dependencies=[Depends(require_token)])
     def confirm_skill(req: SkillConfirm) -> dict:
@@ -731,8 +825,8 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
         title = (full[:found.start()] if found else full.split(" | ")[0]).strip()
         name = f"{profile.first_name}_{profile.last_name}_Cover_Letter.pdf"
         # one letter per posting and resume: a second Fill (or the next step of the same form) reuses it
-        # (v2: the letter follows what the posting asks a letter to say; letters written before are not reused)
-        key = hashlib.sha1(f"v2|{re.sub(r'[?#].*$', '', req.url)}|{req.resume_id}|{title}|{company}".encode()).hexdigest()[:16]
+        # (v3, 2026-11-10: rewritten to read like a person; letters written before are not reused)
+        key = hashlib.sha1(f"v3|{re.sub(r'[?#].*$', '', req.url)}|{req.resume_id}|{title}|{company}".encode()).hexdigest()[:16]
         index_path = letters_dir / "index.json"
         try:
             index = json.loads(index_path.read_text(encoding="utf-8"))
@@ -744,9 +838,22 @@ def create_app(settings: Settings, client: LLMClient, profile: Profile, token: s
             print(f"cover letter: reused {hit['id']} for {company or '?'}", flush=True)
             return letter_reply(req, {"id": hit["id"], "text": hit["text"], "warnings": hit.get("warnings", []), "name": name,
                                       "reused": True})
+        if not req.instruction.strip() and (own := own_letter(req.url)):
+            # the person's own letter for this role, saved on the Desk: used as written, never rewritten by the model
+            letter_id = hashlib.sha1(own.encode()).hexdigest()[:12]
+            if not (letters_dir / f"{letter_id}.pdf").exists():
+                from ..config import apply_environment
+
+                apply_environment(settings)
+                with tailor_lock:
+                    render_letter_pdf(letter_html(profile, own, desk_company(req.url) or company), letters_dir / f"{letter_id}.pdf", settings.tmp_dir)
+            print(f"cover letter: your own, for {company or '?'}", flush=True)
+            return letter_reply(req, {"id": letter_id, "text": own, "warnings": [], "name": name, "own": True})
         writer = profile_for(req.resume_id, req.page_text) if req.resume_id else profile
         try:
-            draft = write_cover_letter(client, writer, company, title, req.page_text, req.instruction)
+            track = best_track(load_career(settings), title, f"{company} {req.page_text[:1500]}", req.page_text)[0]
+            draft = write_cover_letter(client, writer, company, title, req.page_text, req.instruction,
+                                       prefer=tuple(track.evidence) if track else ())
         except Exception as e:  # model not running, out of memory, timeout...
             raise HTTPException(status_code=503, detail=f"model unavailable: {type(e).__name__}")
         if draft.text.strip() == "[stub reply]":

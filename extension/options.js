@@ -69,4 +69,40 @@ for (const kind of KINDS) {
   $("test_" + kind).addEventListener("click", () => chrome.runtime.sendMessage({ type: "alert", kind, text: "This is a test of the " + kind + " sound." }));
 }
 
+// Sites: the panel on any https page; Chrome asks for every site once (the extension already lists it as optional)
+chrome.runtime.sendMessage({ type: "everywhere_state" }).then((r) => { $("everywhere").checked = !!(r && r.on); }).catch(() => {});
+$("everywhere").addEventListener("change", async () => {
+  const on = $("everywhere").checked;
+  if (on && !(await chrome.permissions.request({ origins: ["https://*/*"] }).catch(() => false))) {
+    $("everywhere").checked = false;
+    return say("sitesMsg", "Not allowed. Tick it again and choose Allow.", false);
+  }
+  const r = await chrome.runtime.sendMessage({ type: "everywhere", on }).catch(() => null);
+  if (!r || !r.ok) { $("everywhere").checked = !on; return say("sitesMsg", "Could not change it: " + ((r && r.error) || "no answer"), false); }
+  say("sitesMsg", on ? "On: reload an open application page for the panel to appear." : "Off: only the job sites Tailor knows.", true);
+});
+
+// Submit for me: off unless the person turns it on here (web pages cannot reach this page)
+async function loadSubmit() {
+  const s = await chrome.storage.local.get(["autoSubmit", "autoSubmitDrafts", "autoSubmitCap", "autoSubmitLog"]);
+  $("autoSubmit").checked = s.autoSubmit === true;
+  $("autoSubmitDrafts").checked = s.autoSubmitDrafts === true;
+  if (Number.isFinite(s.autoSubmitCap)) $("autoSubmitCap").value = s.autoSubmitCap;
+  const log = (s.autoSubmitLog || []).slice(-10).reverse();
+  $("submitLog").textContent = log.length ? "Recent: " + log.map((x) =>
+    `${new Date(x.at).toLocaleString()} ${x.outcome} on ${x.host}${x.title ? " (" + x.title + ")" : ""}`).join(" | ") : "";
+}
+$("autoSubmit").addEventListener("change", async () => {
+  await chrome.storage.local.set({ autoSubmit: $("autoSubmit").checked });
+  say("submitMsg", $("autoSubmit").checked ? "On: complete applications are submitted after a 10-second countdown." : "Off: you click Submit.", true);
+});
+$("autoSubmitDrafts").addEventListener("change", () => chrome.storage.local.set({ autoSubmitDrafts: $("autoSubmitDrafts").checked }));
+$("autoSubmitCap").addEventListener("change", async () => {
+  const n = Math.max(0, Math.min(100, parseInt($("autoSubmitCap").value, 10) || 0));
+  $("autoSubmitCap").value = n;
+  await chrome.storage.local.set({ autoSubmitCap: n });
+  say("submitMsg", `At most ${n} a day.`, true);
+});
+loadSubmit();
+
 load();

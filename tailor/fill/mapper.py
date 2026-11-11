@@ -17,6 +17,8 @@ Nothing is guessed: a required field the profile cannot answer is flagged, not i
 """
 from __future__ import annotations
 
+from datetime import date
+
 import re
 
 from .forms import Action, FieldOption, FormField
@@ -38,10 +40,12 @@ _GENERAL = [
     ("referrer", r"who referred you|referred by|\breferr(?:er|al)'?s? (?:name|first|last|email)|name of (?:your |the )?referr|"
                  r"employee (?:who )?referr"),
     ("available_start", r"when (?:can|could|would|will) you (?:start|begin|be available)|available to (?:start|begin)|"
-                        r"earliest (?:possible )?(?:start|availab)|availability (?:to start|date)|desired start date|"
+                        r"earliest (?:possible )?(?:start|availab)|availability (?:to start|date)|(?:desired|preferred) start date|"
                         r"^start date$|when will you be available to (?:start|work)"),
     # ranked office choices (Stripe): the person's order, from My info
-    ("location_pref_1", r"\bfirst (?:location|office) (?:preference|choice)|(?:location|office) (?:preference|choice) (?:#\s*)?(?:1|one)\b|"
+    # "Which office location are you applying to?", "Please select desired work location", "From where do you intend to work?"
+    ("location_pref_1", r"\b(?:which|what) (?:office|location|office location)\b[^?]{0,40}\b(?:applying|apply|prefer|interested|work)\b|desired work location|"
+                        r"where do you (?:intend|plan|want) to work|reference the locations? associated|\bfirst (?:location|office) (?:preference|choice)|(?:location|office) (?:preference|choice) (?:#\s*)?(?:1|one)\b|"
                         r"preferred (?:office )?location|preferred office"),
     ("location_pref_2", r"\bsecond (?:location|office) (?:preference|choice)|(?:location|office) (?:preference|choice) (?:#\s*)?(?:2|two)\b"),
     ("location_pref_3", r"\bthird (?:location|office) (?:preference|choice)|(?:location|office) (?:preference|choice) (?:#\s*)?(?:3|three)\b"),
@@ -69,7 +73,7 @@ _GENERAL = [
                   r"hear about (?:us|this)|heard about (?:us|this)|source of (?:application|referral)|"
                   r"how (?:did|do) you know about"),
     ("website", r"\b(?:portfolio|personal (?:web ?site|url)|web ?site|other (?:web ?site|url))\b|^url$"),
-    ("current_company", r"\b(?:current|most recent|latest)(?: or (?:previous|past|most recent|last))? (?:company|employer|organi[sz]ation)\b"),
+    ("current_company", r"\b(?:current|most recent|latest)(?:/| or | )?(?:(?:previous|past|most recent|last) )?(?:company|employer|organi[sz]ation)\b"),
     ("current_title", r"\b(?:current|most recent|latest)(?: or (?:previous|past|most recent|last))? (?:job )?(?:title|position|role)\b"),
     ("grad_date", r"graduation date|expected graduation|when (?:do|will) you graduate|date of graduation|"
                   r"(?:are|will) you (?:be )?graduating|graduating (?:month|date|year|term)|graduation (?:month|year|term)"),
@@ -77,7 +81,7 @@ _GENERAL = [
     ("state", r"^state\b|\bprovince\b|\bstate/|(?:^| )state(?: province| region)?$"),  # "Legal Address - State"
     ("country", r"^country\b|(?:^| )country$|country of residence|country (?:where|in which) you (?:currently )?(?:reside|live)|"
                 r"(?:which|what) country are you (?:applying|based|located)"),
-    ("postal_code", r"\b(?:zip|postal)\b"),
+    ("postal_code", r"\b(?:zip|postal)(?: ?code)?\b|\bzipcode\b"),
     ("address", r"\b(?:street )?address(?: line 1)?\b"),
 ]
 _EDUCATION = [
@@ -258,23 +262,57 @@ def _place(location: str) -> tuple[str | None, str | None]:
     return city.strip(), _US_STATES.get(state.upper(), state or None)
 
 
+_WORKDAY_EDU = re.compile(r"^education-\d+--")
+
+
+def _reordered_entries(fields: list[FormField], profile: Profile) -> set[int]:
+    """Workday school entries that hold one of the person's schools, but not the one their order puts there (Huron
+    saved them as UCD, Harbor, SOI): the whole entry is written in the person's order."""
+    mine = {norm(e.school) for e in profile.education} | {norm(_school_title(e.school)) for e in profile.education}
+    out = set()
+    for f in fields:
+        if f.section != "education" or not _WORKDAY_EDU.match(f.name or f.id) or resolve_key(f) != "edu_school":
+            continue
+        want = _pick(profile.education, f.section_index)
+        v = norm(f.value)
+        if v and want is not None and v in mine and v not in (norm(want.school), norm(_school_title(want.school))):
+            out.add(f.section_index)
+    return out
+
+
 def _edu_for(field: FormField, profile: Profile) -> Education | None:
     """The resume education line for this form entry: the one whose degree or school the site already shows there
     (Google fills entries from the resume, not in the resume's order); otherwise by position."""
+    if _WORKDAY_EDU.match(field.name or field.id):
+        # Workday: the person's order, entry by entry (the person, 2026-10-30: "SOI, then Harbor, then UCD"); a saved
+        # entry holding another of their schools is rewritten whole (_reordered_entries), so each degree stays with it
+        return _pick(profile.education, field.section_index)
     hint = (field.entry_hint or "").lower()
     if hint:
+        named = [e.school.lower() for e in profile.education if e.school.lower() in hint]
+        longest = max(named, key=len, default="")  # "Example University School of Information" over "Example University"
+
         def score(e: Education) -> int:
             s = 0
             deg = e.degree.lower()
             for word in ("master of business", "master of science", "bachelor of arts", "bachelor of science", "doctor"):
                 if word in deg and word in hint:
                     s += 3
+            # the school's whole name tells two schools of one university apart ("University of Michigan, ... Harbor
+            # School of Business" and "University of Michigan School of Information", Huron 2026-10-30)
+            if longest and e.school.lower() == longest:  # less than the degree words, which say it outright
+                s += 2
             if _school_title(e.school).lower() and _school_title(e.school).lower() in hint:
                 s += 1
             return s
-        best = max(profile.education, key=score, default=None)
-        if best is not None and score(best) > 0:
-            return best
+        scores = [score(e) for e in profile.education]
+        top = max(scores, default=0)
+        if top > 0:
+            tied = [e for e, sc in zip(profile.education, scores) if sc == top]
+            if len(tied) == 1:
+                return tied[0]
+            by_place = _pick(profile.education, field.section_index)
+            return by_place if by_place in tied else tied[0]
     return _pick(profile.education, field.section_index)
 
 
@@ -322,7 +360,7 @@ def value_for(key: str, profile: Profile, field: FormField, job: Experience | No
         "job_city": _place(exp.location)[0] if exp else None,
         "job_state": _place(exp.location)[1] if exp else None,
         "job_country": "United States" if exp and _place(exp.location)[1] else None,
-        "job_description": " ".join(exp.bullets) if exp and exp.bullets else None,
+        "job_description": "\n".join("• " + b for b in (exp.description or exp.bullets)) if exp and (exp.description or exp.bullets) else None,
         "job_start_year": str(exp.start.year) if exp and exp.start else None,
         "job_start_month": str(exp.start.month) if exp and exp.start and exp.start.month else None,
         "job_end_year": str(exp.end.year) if exp and exp.end else None,
@@ -398,6 +436,13 @@ def match_option(value: str, options: list[FieldOption], key: str = "") -> Field
     for o, lab, val in labelled:
         if v in (lab, val):
             return o
+    if key == "how_heard":
+        # lists word this every way: the person's answer in other words, then the nearest true kind of answer, then
+        # "Other" (Stripe, Flexport, Mixpanel, 2026-11-04: all left to the person)
+        for pat in (re.escape(v), r"linkedin" if "linkedin" in v else r"$^", r"website|career" if "website" in v else r"$^", r"job board|job site|job search|online|internet|web", r"^other\b"):
+            hit = next((o for o, lab, val in labelled if re.search(pat, lab)), None)
+            if hit:
+                return hit
     if key in ("city", "job_city", "location"):
         return _match_place(value, labelled)
     city = next((c for c in _PLACE_ALIASES if v.startswith(c)), None)
@@ -494,8 +539,15 @@ def match_option(value: str, options: list[FieldOption], key: str = "") -> Field
         exact_words = [x for x in inside if x[1] in v]  # options the answer contains, longest first
         if key in ("edu_school", "current_school", "city", "job_city") and not exact_words and len(inside) > 1:
             return None  # "University of Michigan" in Ann Arbor, Dearborn and Flint: which campus is not a guess
-        pool = exact_words or inside
-        return max(pool, key=lambda x: len(x[1]))[0] if exact_words else min(pool, key=lambda x: len(x[1]))[0]
+        if exact_words:
+            return max(exact_words, key=lambda x: len(x[1]))[0]
+        # the answer sits inside several options: the one that opens with it, never just the shortest ("Asian" among
+        # "East Asian", "South Asian" and "Southeast Asian" says which of them nobody knows, Gusto 2026-11-04)
+        pool = inside if len(inside) == 1 else [x for x in inside if x[1].startswith(v)]
+        return min(pool, key=lambda x: len(x[1]))[0] if pool else None
+    # a list that does not split the group ("Asian (Not Hispanic or Latino)" for "East Asian"): the group it does name
+    if v in ("east asian", "south asian", "southeast asian", "south east asian"):
+        return match_option("Asian", options, key)
     return None
 
 
@@ -524,7 +576,12 @@ def _match_place(value: str, labelled: list) -> FieldOption | None:
     names |= {norm(name) for code, name in _US_STATES.items() if norm(code) == norm(state)}
     hits = [o for o, lab, _ in labelled
             if lab.startswith(norm(city) + " ") and any(re.search(rf"\b{re.escape(n)}\b", lab[len(norm(city)):]) for n in names if n)]
-    return hits[0] if hits and all(norm(h.label) == norm(hits[0].label) for h in hits) else None
+    if hits and all(norm(h.label) == norm(hits[0].label) for h in hits):
+        return hits[0]
+    # a list that stops at states ("California, United States", ElevenLabs 2026-11-04): true, and as near as it goes
+    full = {norm(name) for code, name in _US_STATES.items() if norm(name) in names}
+    region = [o for o, lab, _ in labelled if any(lab == n or lab == f"{n} united states" for n in full)]
+    return region[0] if len(region) == 1 else None
 
 
 _SAYS_NO = re.compile(r"^no\b|\b(?:never|don t|do not|haven t|have not|am not|not an?)\b")
@@ -574,7 +631,7 @@ def _wants_draft(field: FormField) -> bool:
 
 # Sensitive kinds the person may answer for ONE application by writing a scoped entry in the answer sheet. Consent /
 # attestation checkboxes, government IDs and bot checks are never filled, and neither is an <input type=password>.
-_SCOPED_OK = {"work_authorization", "sponsorship", "demographics", "compensation", "background", "credentials"}
+_SCOPED_OK = {"work_authorization", "sponsorship", "demographics", "compensation", "background", "credentials", "accommodation"}
 
 
 def _sheet_answer(field: FormField, sheet: dict | None, url: str, *, scoped_only: bool) -> str | None:
@@ -621,7 +678,9 @@ _OTHER_COUNTRY = re.compile(r"\b(?:Canada|Canadian|United Kingdom|U\.?K\.?|Brita
 
 
 _BACKGROUND_OK = re.compile(r"(?:willing|consent|agree|able|authori[sz]e)\w*\b[^?]{0,50}background (?:check|screen|investigation)|"
-                            r"background (?:check|screen)\w*[^?]{0,50}\b(?:willing|consent|agree)", re.I)
+                            r"background (?:check|screen)\w*[^?]{0,50}\b(?:willing|consent|agree)|"
+                            # "I acknowledge ... contingent upon ... a background check" (Avalere, 2026-11-03)
+                            r"(?:acknowledg|understand|contingent)\w*\b[^?]{0,250}background (?:check|screen|investigation)", re.I)
 _WORK_THERE = re.compile(r"relocat|work (?:on a daily basis |daily )?(?:in|at|from) the (?:work )?location|in[- ]person|"
                          r"work (?:in|at|from|out of) [^?]{0,40}\b(?:hubs?|offices?|locations?|campus)\b|"
                          r"on[- ]?site|in (?:the|our|one of our|their|your|a) (?:designated |local )?offices?|commut", re.I)
@@ -641,6 +700,51 @@ def _expand_places(text: str) -> str:
             if re.search(rf"\b{re.escape(a)}\b", t):
                 t += " " + city
     return t
+
+
+# What the job asks of time in person or on the road (the person, 2026-11-03: "tailor it to the job description, do they
+# want more in person or travel, otherwise 5 day is fine"): Accenture's on-site requirements, Decagon's "in-office five
+# days a week", Perplexity's "into the office four days per week", Anthropic's "in one of our offices 25% of the time",
+# IXL's "in our San Mateo, CA, headquarters office".
+_ONSITE = re.compile(r"from (?:the|our|an) office[^?.]{0,50}\b(?:days?|%|percent|week)\b|(?:able|willing) to meet (?:the )?(?:on[- ]?site|in[- ]office|in[- ]person|hybrid|travel)|"
+                     r"meet (?:the|these|all) (?:on[- ]?site|in[- ]office|in[- ]person|travel) requirements|"
+                     r"(?:in[- ]office|on[- ]?site|in[- ]person|into (?:the|our|an) office|in (?:the|our|an) office)[^?.]{0,50}"
+                     r"\b(?:days?|%|percent|time|week|hybrid)\b|\b(?:days?|%|percent)\b[^?.]{0,50}"
+                     r"(?:in[- ]office|on[- ]?site|in[- ]person|in (?:the|our|an) office)|"
+                     r"(?:able|willing|open|ok|comfortable)[^?.]{0,30}\b(?:to|with) travel|"
+                     r"requires? you to be in (?:the|our)[^?.]{0,50}\boffice\b", re.I)
+_NAMED_CITY = re.compile(r"\b(?:in|at) (?:the |our )?([A-Z][a-z]+(?: [A-Z][a-z]+)*),? [A-Z]{2}\b")
+
+
+def _onsite_fact(field: FormField, standing: dict | None) -> str | None:
+    """Yes when the person has no limit on time in person (standing in_person_max_percent 100): they go with what the
+    job asks. An office in a named city they did not list stays theirs to answer: that is a move, not a schedule."""
+    q = f"{field.label} {field.context}"
+    if not standing or not _ONSITE.search(q) or re.search(r"relocat", field.label, re.I):
+        return None
+    if (m := _NAMED_CITY.search(field.label)):
+        from .profile import BAY_AREA
+
+        cities = [c.lower() for c in standing.get("relocation_ok_cities") or []]
+        city = m[1].lower()
+        if city not in cities and not ("san francisco" in cities and city in {b.lower() for b in BAY_AREA}):
+            return None
+    return "Yes" if int(standing.get("in_person_max_percent") or 0) >= 100 else None
+
+
+_RESIDENT = re.compile(r"\b(?:a )?resident of (?:the state of )?([A-Za-z .]+?)\s*\??\s*\*?$|\b(?:live|reside) in (?:the state of )?([A-Za-z .]+?)\s*\??\s*\*?$", re.I)
+
+
+def _residency_fact(field: FormField, profile: Profile) -> str | None:
+    """"Are you a resident of California?" (Palantir, 2026-10-30): from the person's own state on My info."""
+    m = _RESIDENT.search(re.sub(r"[*✱]+", "", field.label or "").strip())
+    if not m or not profile.state:
+        return None
+    asked = norm(m.group(1) or m.group(2))
+    mine = {norm(profile.state)} | ({norm(_US_STATES.get(profile.state.upper(), ""))} if len(profile.state) == 2 else set())
+    if asked in mine or (len(asked) == 2 and _US_STATES.get(asked.upper(), "").lower() in mine):
+        return "Yes"
+    return "No" if asked in {n.lower() for n in _US_STATES.values()} or asked.upper() in _US_STATES else None
 
 
 def _location_fact(field: FormField, standing: dict | None, role_location: str) -> str | None:
@@ -671,6 +775,51 @@ def _location_fact(field: FormField, standing: dict | None, role_location: str) 
     return None
 
 
+# The person's consent rules (2026-10-30): acknowledge privacy notices, terms, "I agree" and AI-policy boxes; answer No
+# to text messages; accept arbitration agreements. A signature and an age statement stay theirs to give.
+_SMS = re.compile(r"receive (?:communications|messages|texts|updates)|\bsms\b|whatsapp|text messages?", re.I)
+_ARBITRATION = re.compile(r"arbitrat", re.I)
+_PERSONAL_ATTEST = re.compile(r"e-?signature|electronic signature|\bsignature\b|\b1[68] years|\bage of 1[68]\b|legal (?:working )?age", re.I)
+_AFFIRM = re.compile(r"^(?:yes|i (?:agree|accept|acknowledge|consent|understand|confirm|certify|have read)|agree|accept|"
+                     r"acknowledge|acknowledged|confirm|i do|understood)\b", re.I)
+_DECLINE = re.compile(r"^(?:no\b|i do not|i don'?t|do not|decline|opt out|not now)", re.I)
+
+
+def _consent_answer(field: FormField, standing: dict | None) -> Action | None:
+    """A legal box the person's consent rules answer, or None (theirs to answer)."""
+    st = standing or {}
+    q = f"{field.label} {field.context}"
+    if _PERSONAL_ATTEST.search(q):
+        return None
+    if _SMS.search(q):
+        rule = str(st.get("sms_opt_in") or "").strip()
+    elif _ARBITRATION.search(q):
+        rule = str(st.get("arbitration") or "").strip()
+    else:
+        rule = str(st.get("acknowledge_notices") or "").strip()
+    if not rule:
+        return None
+    yes = rule.lower() in ("yes", "accept", "true", "agree")
+    if field.type == "checkbox":
+        if not yes:
+            return Action(field_id=field.id, kind="skip", category="legal_attestation", reason="your rule: left unticked")
+        return Action(field_id=field.id, kind="check", value="true", source="answer_sheet", category="legal_attestation",
+                      reason="your consent rule")
+    opts = [o for o in (field.options or []) if (o.label or o.value or "").strip()]
+    want = _AFFIRM if yes else _DECLINE
+    pick = next((o for o in opts if want.search((o.label or o.value).strip())), None)
+    if pick is not None:
+        if field.type == "combobox":
+            return Action(field_id=field.id, kind="combobox", value=pick.label or pick.value, source="answer_sheet",
+                          category="legal_attestation", reason="your consent rule")
+        return Action(field_id=field.id, kind="select", value=pick.value, source="answer_sheet",
+                      category="legal_attestation", reason="your consent rule")
+    if field.type == "combobox" and not opts:  # a list that loads on opening: the extension picks the words
+        return Action(field_id=field.id, kind="combobox", value="Yes" if yes else "No", source="answer_sheet",
+                      category="legal_attestation", reason="your consent rule")
+    return None
+
+
 def _standing_answer(field: FormField, category: str, standing: dict | None, us_role: bool = False) -> str | None:
     if not standing:
         return None
@@ -683,7 +832,11 @@ def _standing_answer(field: FormField, category: str, standing: dict | None, us_
         if field.type in ("text", "textarea") and not field.options and re.search(r"disabilit|condition|impairment", norm(raw)):
             return None  # "describe your disability": never written out from a standing answer; the person decides
         # the question's own words first: an EEO section's text around "Pronouns" also says gender and veteran (Stripe)
+        # a box of a list ("He/him") says nothing itself: its name or the question's opening words do, before the long
+        # text around them, which also names gender and veterans (Avalere, 2026-11-03)
         hits = [key for key, pat in _STANDING if pat.search(norm(field.label))] or \
+            [key for key, pat in _STANDING if pat.search(norm(field.name or ""))] or \
+            [key for key, pat in _STANDING if pat.search(norm((field.context or "")[:60]))] or \
             [key for key, pat in _STANDING if pat.search(norm(raw))]
         if not hits:  # "Please check one of the boxes below:": the answers say which form this is
             opts = " ".join(norm(o.label or o.value or "") for o in field.options or [])
@@ -696,6 +849,12 @@ def _standing_answer(field: FormField, category: str, standing: dict | None, us_
             return None
         value = standing.get(hits[0])
         return str(value) if value else None
+    if category == "compensation":  # the person's own figure, if they saved one; never worked out from anything else
+        value = str(standing.get("desired_compensation") or "")
+        return _pay_for(field, value) if value else None
+    if category == "accommodation":  # the person's own standing answer, if they saved one; never their disability answer
+        value = standing.get("interview_accommodation")
+        return str(value) if value and field.type in ("radio", "select", "combobox") else None
     if category == "background" and _BACKGROUND_OK.search(raw):
         value = standing.get("background_check_ok")  # willing to / consent to a check: the person's standing answer
         return str(value) if value else None
@@ -720,8 +879,10 @@ _HAS_BACHELORS = re.compile(r"(?:have you|did you) (?:graduated?|complete[d]?|ea
                             r"bachelor|(?:do you have|do you hold|hold) an? bachelor", re.I)
 
 
-_WORKED_HERE = re.compile(r"(?:have you|did you) (?:ever |previously )?(?:worked|been employed)[^?]{0,20}? (?:at|for|by) "
-                          r"(?:an? )?([^?,]{2,80})|(?:former|previous|past) employee of ([^?,]{2,60})", re.I)
+_WORKED_HERE = re.compile(r"(?:have you|did you) (?:(?:ever|previously) )*(?:worked|been (?:previously )?employed)[^?]{0,20}? (?:at|for|by) "
+                          r"(?:an? )?([^?,]{2,80})|(?:former|previous|past) employee of ([^?,]{2,60})|"
+                          r"have you ever, or are you currently working (?:at|for) ([^?,]{2,60}?)(?: in any capacity|\?|,|$)|"
+                          r"(?:do|are) you currently,? or have you (?:previously|ever),? work(?:ed)? (?:at|for) ([^?,]{2,60}?)(?: or a company| as an?\b|\?|,|$)", re.I)
 
 
 _NEVER_WORKED = re.compile(r"\b(?:have not|haven t|never|not)\s+(?:been\s+)?(?:worked|employed)\s+(?:for|at|by|with)\s+"
@@ -750,11 +911,16 @@ def _checklist_pick(field: FormField, profile: Profile, standing: dict | None = 
         return True
     if re.search(r"office|location", q) and re.search(r"select all|all that apply|open to|would (?:be )?(?:open|willing)", q):
         return any(norm(c) in opt or opt in norm(c) for c in profile.location_preferences) if profile.location_preferences else None
+    # "How did you hear about this opportunity? (select all that apply)" (Gusto): the person's usual answer, if it is listed
+    if re.search(r"how did you (?:first |originally )?(?:hear|find|learn)", q) and profile.how_heard:
+        heard = norm(profile.how_heard)
+        return heard in opt or opt in heard
     # "What languages do you speak? (check all that apply)" (Lever lists 40): the languages from My info
     if re.search(r"languages?", q) and not re.search(r"programming|coding|software", q) and \
             re.search(r"select all|all that apply|speak|fluent|proficien", q) and profile.languages:
         mine = {norm(re.sub(r"\(.*?\)", "", x)) for x in profile.languages.split(",") if x.strip()}
-        return norm(re.sub(r"\(.*?\)", "", opt)) in mine
+        # the option's own words without its code: "English (ENG)" is English (Palantir, 2026-10-30: none matched)
+        return norm(re.sub(r"\(.*?\)", "", field.label)) in mine
     if re.search(r"programming|software|tools?|languages?\b.*(?:experience|proficien)|experience with any of", q) and \
             re.search(r"select all|all that apply|any of the following", q):
         skills = {norm(x) for s in profile.skills for x in re.split(r"[,;/()]", s) if x.strip()}
@@ -792,6 +958,40 @@ def _names_in(listing: str, text: str) -> bool | None:
     return any(norm(c) and re.search(rf"\b{re.escape(norm(c))}\b", t) for c in listing.split(","))
 
 
+# Questions about the person's ties to the company or to governments (Accenture, 2026-10-30): "Have you entered into a
+# non-disclosure, non-solicit, or non-compete agreement?", "Are you currently working on a project with Accenture?",
+# "Are you currently employed by or interning for any government?"
+_COMPANY_TIES = re.compile(r"non[- ]?disclosure|non[- ]?solicit|non[- ]?compet|restrictive covenant|"
+                           r"subject to (?:any|a|an)\b[^?]{0,50}(?:agreement|restriction|covenant)|"
+                           r"(?:work(?:ing|ed)?|been) on (?:a|any) (?:project|engagement) (?:with|for)|"
+                           r"(?:employed by|interning for|work(?:ing|ed)? for)[^?]{0,80}\b(?:government|state[- ]owned|public (?:entity|sector))|"
+                           r"government (?:entity|agency|employee)", re.I)
+# being employed by a government or a state-owned or public body (not being a government official): a public
+# university is one (the person, 2026-10-30, works at one), so it has its own standing answer
+_GOV_EMPLOY = re.compile(r"(?:employed by|interning for|work(?:ing|ed)? for|affiliated with)[^?]{0,80}\b(?:government|"
+                         r"state[- ]owned|public (?:entity|sector|body))|government (?:entity|agency|employee)|"
+                         r"state[- ]owned (?:entity|enterprise)", re.I)
+
+
+def _company_ties(field: FormField, profile: Profile, standing: dict | None) -> str | None:
+    """The person's rule (standing_answers "company_questions", 2026-10-30: "if the application asks a weird question
+    related to the company, have Tailor answer no"): what they entered on My info first, else that answer. None: the
+    rule is not set, or the question is not one of these."""
+    rule = str((standing or {}).get("company_questions") or "").strip()
+    gov = str((standing or {}).get("government_employment") or "").strip()
+    q = f"{field.label} {field.context}"
+    if field.type not in ("radio", "select", "combobox"):
+        return None
+    if gov and _GOV_EMPLOY.search(q):  # standing_answers "government_employment": "Yes" for a public university
+        return gov
+    if not rule:
+        return None
+    if not (_COMPANY_TIES.search(q) or _GOV_OFFICIAL.search(q) or _CONFLICT.search(q) or _RELATIVE.search(q)
+            or _INTERVIEWED.search(q)):
+        return None
+    return _fill_once_fact(field, profile) or rule
+
+
 def _fill_once_fact(field: FormField, profile: Profile, page_text: str = "") -> str | None:
     """Yes/No questions the person answered once on My info: interviewed here before, a relative works here, a
     government official, a conflict of interest. Blank on My info: None, the form asks the person."""
@@ -809,6 +1009,88 @@ def _fill_once_fact(field: FormField, profile: Profile, page_text: str = "") -> 
     return None
 
 
+_WORDS_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "twelve": 12}
+# "Do you have at least 6 months of full-time, paid experience?" with no field named: a sum over the resume's jobs. A
+# named field ("2 years of management consulting experience") is a judgment that stays with the person.
+_EXPERIENCE_MIN = re.compile(r"\b(?:at least|a minimum of|minimum of|more than|over)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\+?"
+                             r"\s*(months?|years?)\s+(?:of\s+)?((?:(?:full[- ]?time|part[- ]?time|paid|professional|work|working|post[- ]?graduate)[ ,]*(?:and |or )?)*)experience\b", re.I)
+
+
+def _job_months(profile: Profile) -> int:
+    """Months covered by the resume's jobs, overlapping jobs counted once."""
+    today = date.today()
+    spans = sorted((e.start.year * 12 + (e.start.month or 1), (e.end.year * 12 + (e.end.month or 12)) if e.end else today.year * 12 + today.month)
+                   for e in profile.experience if e.kind == "job" and e.start and (e.end or e.current))
+    total, last = 0, 0
+    for a, b in spans:
+        a = max(a, last)
+        if b > a:
+            total, last = total + b - a, b
+    return total
+
+
+def _experience_fact(field: FormField, profile: Profile) -> str | None:
+    m = _EXPERIENCE_MIN.search(f"{field.label}")
+    if not m:
+        return None
+    n = int(m[1]) if m[1].isdigit() else _WORDS_NUM[m[1].lower()]
+    return "Yes" if _job_months(profile) >= n * (12 if m[2].lower().startswith("year") else 1) else None  # short of it: they answer
+
+
+# "Are you based in the SF Bay Area or New York?", "Do you currently reside in the country this role is located?"
+_LIVES_IN = re.compile(r"\b(?:are you|do you)\b[^?]{0,20}\b(?:based|located|live|living|reside|residing)\b[^?]{0,8}\bin\b([^?]{2,120})", re.I)
+
+
+def _home_fact(field: FormField, profile: Profile, us_role: bool, role_location: str) -> str | None:
+    """Where the person lives, from My info. Only when the question names the place, or it is the role's own country."""
+    m = _LIVES_IN.search(field.label or "")
+    if not m or not profile.city:
+        return None
+    from .profile import BAY_AREA
+
+    place = m[1]
+    if re.search(r"\b(?:united states|usa|u\.s\.a?\.?)\b", place, re.I):
+        return "Yes" if norm(profile.country or "") in ("united states", "usa", "us", "united states of america") else None
+    if re.search(r"\bcountry\b", place, re.I):
+        return "Yes" if us_role and norm(profile.country or "") in ("united states", "usa", "us", "united states of america") else None
+    home = norm(profile.city)
+    bay = {norm(b) for b in BAY_AREA}
+    named = _expand_places(place)
+    known = [c for c in list(_PLACE_ALIASES) + [norm(b) for b in BAY_AREA] if re.search(rf"\b{re.escape(c)}\b", named)]
+    if not known:
+        return None
+    if home in known or (home in bay and "san francisco" in known):
+        return "Yes"
+    return "No"
+
+
+# held or not: the person's own standing answers, and nothing else ever answers these
+_ACTIVE_CLEARANCE = re.compile(r"\b(?:hold|have|possess)\b[^?]{0,40}\bclearance\b", re.I)
+
+
+_HOURLY = re.compile(r"per hour|/\s*h(?:ou)?r\b|\bhourly\b", re.I)
+_ANNUAL = re.compile(r"annual|yearly|per year|per annum|/\s*y(?:ea)?r\b", re.I)
+
+
+def _pay_for(field: FormField, value: str) -> str | None:
+    """The saved figure, only where it means what the person meant. An hourly figure is not converted to a yearly one
+    (that would be a number they never gave), and a bare number box gets digits only when it asks for the same unit."""
+    label = field.label or ""
+    if _HOURLY.search(value) and _ANNUAL.search(label):
+        return None
+    if field.type == "number":
+        digits = re.search(r"\d[\d,]*(?:\.\d+)?", value)
+        same_unit = bool(_HOURLY.search(value)) == bool(_HOURLY.search(label))
+        return digits.group().replace(",", "") if digits and same_unit else None
+    return value
+
+
+def _clearance_fact(field: FormField, standing: dict | None) -> str | None:
+    if _ACTIVE_CLEARANCE.search(field.label or "") and not re.search(r"eligib|able to obtain|obtain", field.label, re.I):
+        return str((standing or {}).get("security_clearance") or "") or None
+    return None
+
+
 def _resume_fact(field: FormField, profile: Profile) -> str | None:
     """Yes/No questions the resume answers: a completed bachelor's degree ("Yes" only). And, by the person's own rule
     (2026-09-30), "Have you worked at X?" is "No" when X is not an employer on the resume; when it is, they answer."""
@@ -819,7 +1101,7 @@ def _resume_fact(field: FormField, profile: Profile) -> str | None:
                  q, re.I) and any(e.kind == "job" for e in profile.experience):
         return "Yes"  # the resume's jobs (2026-10-07, DoorDash: "at least 1 internship or relevant full-time experience?")
     if (m := _WORKED_HERE.search(field.label or "")):
-        company = norm(m.group(1) or m.group(2))
+        company = norm(m.group(1) or m.group(2) or m.group(3) or m.group(4))
         employers = [norm(e.employer) for e in profile.experience if e.employer]
         first = company.split()[0] if company.split() else ""
         if not company or any(first and first in emp or emp.split()[0] in company for emp in employers if emp):
@@ -903,12 +1185,25 @@ def plan_field(field: FormField, profile: Profile, answer_sheet: dict | None = N
                role_location: str = "") -> Action:
     if (own := _self_id_form_field(field, profile)) is not None:
         return own
+    if (ties := _company_ties(field, profile, standing)) is not None:  # before the sensitive rules: "non-compete"
+        return _apply_value(field, "", ties, "answer_sheet")
     if (category := classify(field)):
         saved = None
         if category in _SCOPED_OK and field.type != "password":
             saved = _sheet_answer(field, answer_sheet, url, scoped_only=True)
             if saved is None:
                 saved = _standing_answer(field, category, standing, us_role)
+        if saved is None and category == "legal_attestation" and re.search(r"\b18\b", field.label or "") and \
+                not re.search(r"signature", field.label or "", re.I) and field.type in ("radio", "select", "combobox") and \
+                any(not e.expected for e in profile.education):
+            return _apply_value(field, "", "Yes", "profile")  # "Are you 18 or older?": a finished degree says so
+        if saved is None and category == "legal_attestation" and (consent := _consent_answer(field, standing)) is not None:
+            return consent
+        if category == "background" and field.type == "checkbox" and not field.options and \
+                norm(str((standing or {}).get("background_check_ok") or "")) == "yes":
+            # "I acknowledge ... a background check" (Avalere, 2026-10-30): the person's yes to background checks
+            return Action(field_id=field.id, kind="check", value="true", source="answer_sheet", category=category,
+                          reason="your standing answer")
         if saved is None:
             return Action(field_id=field.id, kind="needs_you", category=category,
                           reason=f"sensitive ({category}): only you answer this")
@@ -929,6 +1224,8 @@ def plan_field(field: FormField, profile: Profile, answer_sheet: dict | None = N
             return Action(field_id=field.id, kind="check", value="true", source="profile",
                           reason="never worked there (your rule: not an employer on your resume)")
         return Action(field_id=field.id, kind="needs_you", reason="you worked there: tick the boxes that apply")
+    if field.type == "checkbox" and _onsite_fact(field, standing) == "Yes":
+        return Action(field_id=field.id, kind="check", value="true", source="answer_sheet", reason="your in-person rule")
     label = norm(field.label)
     if field.type == "file":
         named = f"{label} {norm(field.name)}"  # some sites label the input just "Attach"; its name says "resume"
@@ -956,7 +1253,10 @@ def plan_field(field: FormField, profile: Profile, answer_sheet: dict | None = N
         value = _sheet_answer(field, answer_sheet, url, scoped_only=False)
         source = "answer_sheet"
     if value is None and field.type in ("radio", "select", "combobox"):  # a saved answer wins over these rules
-        value, source = (_start_fact(field, profile) or _location_fact(field, standing, role_location)
+        value, source = (_start_fact(field, profile) or _onsite_fact(field, standing) or _residency_fact(field, profile)
+                         or _home_fact(field, profile, us_role, role_location) or _experience_fact(field, profile)
+                         or _clearance_fact(field, standing)
+                         or _location_fact(field, standing, role_location)
                          or _resume_fact(field, profile) or _fill_once_fact(field, profile)), "profile"
 
     # a school list (also one whose options load only when it opens: DoorDash, 2026-10-07, got "University of
@@ -1010,6 +1310,21 @@ def match_school(school: str, location: str, options: list[FieldOption]) -> Fiel
     return here[0] if len(here) == 1 else None
 
 
+_SCHOOL_FILLER = {"university", "college", "school", "institute", "of", "the", "at", "and", "for", "in"}
+
+
+def _unlisted_school(school: str, options: list[FieldOption]) -> FieldOption | None:
+    """The list's own "Other - School Not Listed", only when no option names this school. A school listed under other
+    words or several campuses is the person's choice, not "Other"."""
+    name = re.sub(r"\b(?:school|college) of\b.*$", "", norm(school))
+    words = [w for w in name.split() if w not in _SCHOOL_FILLER]
+    labels = [norm(o.label) for o in options]
+    if not words or any(all(re.search(rf"\b{re.escape(w)}\b", lab) for w in words) for lab in labels):
+        return None
+    other = [o for o, lab in zip(options, labels) if re.match(r"other\b", lab)]
+    return other[0] if len(other) == 1 else None
+
+
 def _apply_value(field: FormField, key: str, value: str, source: str) -> Action:
     if field.type == "combobox" and key.endswith("_month") and value.isdigit() and 1 <= int(value) <= 12:
         value = _MONTH_NAMES_TITLE[int(value) - 1]  # a month list shows names ("May"), not numbers
@@ -1020,6 +1335,9 @@ def _apply_value(field: FormField, key: str, value: str, source: str) -> Action:
         if key in ("edu_school", "current_school") and "\n" in value:  # "school\nlocation" (see plan_field)
             opt = match_school(*value.split("\n", 1), field.options)
             value = value.split("\n", 1)[0]
+        if opt is None and key in ("edu_school", "current_school"):
+            head = re.split(r"\s+(?:School|College) of\b", value)[0]  # "Ohio State University School of Information"
+            opt = (match_option(head, field.options, key) if head != value else None) or _unlisted_school(value, field.options)
         if opt is None:
             return Action(field_id=field.id, kind="needs_you" if field.required else "skip",
                           reason=f"no option matches '{value}'")
@@ -1030,7 +1348,13 @@ def _apply_value(field: FormField, key: str, value: str, source: str) -> Action:
     if field.maxlength and len(value) > field.maxlength and key != "job_description":
         return Action(field_id=field.id, kind="needs_you", reason=f"value longer than the field allows ({field.maxlength})")
     if field.maxlength and len(value) > field.maxlength:
-        value = value[: field.maxlength].rsplit(" ", 1)[0]
+        # a role description keeps whole bullets (the best-fitting come first); one bullet too long is cut at a word
+        lines, kept = value.split("\n"), []
+        for line in lines:
+            if len("\n".join(kept + [line])) > field.maxlength:
+                break
+            kept.append(line)
+        value = "\n".join(kept) if kept else value[: field.maxlength].rsplit(" ", 1)[0]
     return Action(field_id=field.id, kind="fill", value=value, source=source, reason=key)
 
 
@@ -1100,11 +1424,50 @@ def plan_fields(fields: list[FormField], profile: Profile, answer_sheet: dict | 
     return plan_fields_with_notes(fields, profile, answer_sheet, url, standing, us_role)[0]
 
 
-def entries_to_add(fields: list[FormField], profile: Profile) -> dict[str, int]:
+# Workday's skills box (Huron, 2026-10-30): "Type to Add Skills"
+_SKILLS_BOX = re.compile(r"type to add skills|^skills\*?(?:\s|$)|--skills\b", re.I)
+
+# Workday's "Websites" section: one "URL" box per press of its Add button (Huron, 2026-10-30)
+_WEBSITE = re.compile(r"^webAddress-\d+--url$")
+
+
+def _links(profile: Profile) -> list[str]:
+    """The person's own sites for a form's Websites list: portfolio, then GitHub (LinkedIn has its own box)."""
+    return [u for u in (profile.portfolio_url, profile.github_url) if u]
+
+
+def _website_actions(fields: list[FormField], profile: Profile) -> dict[str, Action]:
+    """Each empty Websites box gets the next of the person's links not already in one."""
+    boxes = [f for f in fields if _WEBSITE.match(f.name or f.id)]
+    have = {norm(f.value) for f in boxes if f.value.strip()}
+    todo = [u for u in _links(profile) if norm(u) not in have]
+    out = {}
+    for f in boxes:
+        if f.value.strip():
+            out[f.id] = Action(field_id=f.id, kind="skip", reason="already answered: kept as it is")
+        elif todo:
+            out[f.id] = Action(field_id=f.id, kind="fill", value=todo.pop(0), source="profile", reason="website")
+        else:
+            out[f.id] = Action(field_id=f.id, kind="skip", reason="no more websites of yours")
+    return out
+
+
+def entries_to_add(fields: list[FormField], profile: Profile, empty: set[str] | frozenset[str] = frozenset()) -> dict[str, int]:
     """How many work and education entries the page lacks for the resume ({"experience": 3}): Workday starts with one
-    of each, and the extension can press its Add button that many times."""
+    of each, and the extension can press its Add button that many times. `empty`: sections the page shows with only an
+    Add button (some Workday sites start with none, Huron 2026-10-28): every job and school is to be added."""
     out: dict[str, int] = {}
     work = {f.section_index for f in fields if f.section == "experience"}
+    if not work and "experience" in empty and (n := sum(1 for x in profile.experience if x.kind == "job")):
+        out["experience"] = n
+    if not any(f.section == "education" for f in fields) and "education" in empty and profile.education:
+        out["education"] = len(profile.education)
+    boxes = [f for f in fields if _WEBSITE.match(f.name or f.id)]
+    if boxes or "websites" in empty:
+        have = {norm(f.value) for f in boxes if f.value.strip()}
+        missing = len([u for u in _links(profile) if norm(u) not in have]) - sum(1 for f in boxes if not f.value.strip())
+        if missing > 0:
+            out["websites"] = missing
     if work:
         matched, _ = match_work_entries(fields, profile)
         jobs = [x for x in profile.experience if x.kind == "job"]
@@ -1149,7 +1512,18 @@ def plan_fields_with_notes(fields: list[FormField], profile: Profile, answer_she
                   "click Fill this page again." for e in profile.education[n:]]
     flagged: set[int] = set()
     actions = []
+    websites = _website_actions(fields, profile)
     for f in fields:
+        if f.id in websites:
+            actions.append(websites[f.id])
+            continue
+        if _SKILLS_BOX.search(f"{f.label} {f.name}") and f.type == "combobox" and not f.section:
+            # the posting's most-wanted skills the person has, picked one by one from the site's list
+            actions.append(Action(field_id=f.id, kind="multi", value="\n".join(profile.wanted_skills), source="profile",
+                                  reason="skills") if profile.wanted_skills and not f.value.strip()
+                           else Action(field_id=f.id, kind="skip", reason="no posting skills to add" if not f.value.strip()
+                                       else "already answered: kept as it is"))
+            continue
         m = matched.get(f.section_index) if f.section == "experience" else None
         if isinstance(m, str):
             # a project or a line not on the resume: nothing is filled in it; the person removes or checks it, once
@@ -1171,7 +1545,7 @@ def plan_fields_with_notes(fields: list[FormField], profile: Profile, answer_she
         if f.type == "checkbox" and a.kind == "needs_you" and (f.name or f.context) in answered:
             actions[i] = Action(field_id=f.id, kind="skip", reason="answered by another box")
     _single_location_choice(fields, actions, profile)
-    _keep_what_is_there(fields, actions, url)
+    _keep_what_is_there(fields, actions, url, rewrite=_reordered_entries(fields, profile))
     return actions, notes
 
 
@@ -1196,7 +1570,7 @@ def has_answer(field: FormField) -> bool:
     return not _PLACEHOLDER.match(norm(v))
 
 
-def _keep_what_is_there(fields: list[FormField], actions: list[Action], url: str = "") -> None:
+def _keep_what_is_there(fields: list[FormField], actions: list[Action], url: str = "", rewrite: set[int] = frozenset()) -> None:
     """A box that already holds an answer is never written over (L.E.K.'s Oleeo, 2026-10-13: every save reloads the
     step, and the fill on arrival put back Tailor's values over the person's corrections). Google Careers' work and
     school entries are the exception: Google fills them from the resume itself, not always rightly, and Tailor fixes
@@ -1206,6 +1580,8 @@ def _keep_what_is_there(fields: list[FormField], actions: list[Action], url: str
         if a.kind not in ("fill", "select", "combobox", "check") or not has_answer(f):
             continue
         if google and f.section in ("experience", "education"):
+            continue
+        if f.section == "education" and f.section_index in rewrite:  # an entry out of the person's order
             continue
         actions[i] = Action(field_id=f.id, kind="skip", reason="already answered: kept as it is")
 

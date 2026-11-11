@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT))
 from tailor.config import load_settings  # noqa: E402
 
 ALLOW = ["tailor", "extension", "tests", "scripts", "examples", "config.example.toml", "requirements.txt",
-         "README.md", "PREFERENCES.md", ".gitignore", "LICENSE"]
+         "README.md", "PREFERENCES.md", ".gitignore", ".gitattributes", "LICENSE"]
 SKIP_PARTS = {"__pycache__", ".DS_Store", ".pytest_cache"}
 SKIP_SUFFIXES = {".pyc", ".pdf", ".zip"}
 TEXT_SUFFIXES = {".py", ".js", ".html", ".css", ".json", ".md", ".toml", ".txt", ".sh", ".svg", ".gitignore", ""}
@@ -114,6 +114,16 @@ def needles(settings, pairs) -> dict[str, tuple[str, bool]]:
             v = str(extras.get(k, "")).strip()
             if len(v) >= 5:
                 out[v.lower()] = (f"the owner's {k.replace('_', ' ')}", False)
+    # "Dr. A B" on the list is also looked for as "A B" (2026-11-11: a test quoted the name without the title)
+    for k, v in list(out.items()):
+        bare = re.sub(r"^(?:dr|mr|mrs|ms|prof)\.?\s+", "", k)
+        if bare != k and len(bare) >= 8:
+            out.setdefault(bare, v)
+    std = prof_dir / "standing_answers.json"
+    if std.exists():  # the owner's own pay figure is theirs, even in a test
+        pay = str(json.loads(std.read_text(encoding="utf-8")).get("desired_compensation") or "").strip()
+        if len(pay) >= 3:
+            out[pay.lower()] = ("the owner's pay figure", False)
     for k in list(out):
         if k in ALLOWED_WORDS:
             del out[k]

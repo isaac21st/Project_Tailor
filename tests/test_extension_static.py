@@ -41,6 +41,35 @@ class ManifestTests(unittest.TestCase):
             self.assertTrue((EXT / f).exists(), f)
 
 
+class SubmitForMeTests(unittest.TestCase):
+    """The person's request (2026-10-28): submit by itself, as an option. Off unless set in Options; one guarded press."""
+    code = re.sub(r"//.*", "", (EXT / "content.js").read_text(encoding="utf-8"))
+
+    def body(self, name: str) -> str:
+        m = re.search(r"(?:async )?function " + name + r"\(.*?\n  }\n", self.code, re.S)
+        self.assertIsNotNone(m, name)
+        return m.group(0)
+
+    def test_it_is_off_unless_the_setting_is_exactly_true(self):
+        self.assertIn('if (s.autoSubmit !== true) return false;', self.body("maybeSubmit"))
+        self.assertLess(self.body("maybeSubmit").index("autoSubmit !== true"), self.body("maybeSubmit").index("submitApplication()"))
+        self.assertNotIn("autoSubmit: true", self.code)  # nothing in the page script turns it on
+
+    def test_the_one_press_is_checked_again_after_the_countdown(self):
+        go = self.body("submitApplication")
+        self.assertEqual(go.count(".click()"), 1)
+        for before in ("cancelNext", "submitBlockers(", "assertSubmitButton(btn)", 'outcome: "submitted"'):
+            self.assertLess(go.index(before), go.index("btn.click()"), before)
+
+    def test_what_stops_it(self):
+        why = self.body("submitBlockers")
+        for part in ("requiredNeeds", "emptyRequired()", "CAPTCHA", '"password"', "pageErrors()", "NO_AUTO_NEXT",
+                     "autoSubmitDrafts !== true", "autoSubmitCap", "filledOnce", ".size !== 1"):
+            self.assertIn(part, why)
+        self.assertIn("checkbox", self.body("emptyRequired"))  # an unticked "I certify" box keeps it from submitting
+        self.assertIn("never ticks", (EXT / "content.js").read_text(encoding="utf-8"))
+
+
 class NoSubmitTests(unittest.TestCase):
     content = (EXT / "content.js").read_text(encoding="utf-8")
     code = re.sub(r"//.*", "", content)  # comments may mention the words; code may not
@@ -56,9 +85,15 @@ class NoSubmitTests(unittest.TestCase):
                           "querySelector('button", 'querySelector("button', "form.submit", ".action ="):
             self.assertNotIn(forbidden, self.code, forbidden)
 
-    def test_exactly_fourteen_clicks_exist_and_each_is_guarded(self):
+    def test_exactly_sixteen_clicks_exist_and_each_is_guarded(self):
         clicks = [m.start() for m in re.finditer(r"\.click\(\)", self.code)]
-        self.assertEqual(len(clicks), 14)
+        self.assertEqual(len(clicks), 16)
+        # a Workday list in categories (Huron, 2026-10-28): only an option of the box's own list
+        press = self._body("pressPromptItem")
+        self.assertEqual(press.count(".click()"), 1)
+        for part in ('"option"', '"menuItem"', 'closest("a, button, #tailor-panel-host")', "isVisible(o)"):
+            self.assertIn(part, press)
+        self.assertLess(press.index("throw new Error"), press.index("o.click()"))
         # JazzHR: its own "Attach resume" link (href="#") inside the resume question, only for its hidden resume box
         rv = self._body("revealUpload")
         self.assertEqual(rv.count(".click()"), 1)
@@ -98,8 +133,12 @@ class NoSubmitTests(unittest.TestCase):
 
     def test_mouse_events_exist_only_inside_chooseCombobox_and_go_to_the_dropdowns_own_box(self):
         combo = self._body("chooseCombobox")
-        outside = self.code.replace(combo, "")
+        opener = self._body("openPrompt")  # a Workday list box (Huron, 2026-10-28): only that box
+        outside = self.code.replace(combo, "").replace(opener, "")
         self.assertNotRegex(outside, r"MouseEvent|PointerEvent")
+        self.assertIn("input.dispatchEvent(new Ev(", opener)
+        self.assertLess(opener.index("assertSafe(input)"), opener.index("dispatchEvent"))
+        self.assertIn('"selectinput"', opener)
         self.assertEqual(len(re.findall(r"\.dispatchEvent\(new Ev\(", combo)), 1)
         self.assertIn("control.dispatchEvent(new Ev(", combo)
         self.assertIn("assertSafe(input)", combo)

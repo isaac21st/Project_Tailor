@@ -13,27 +13,45 @@ from ..llm import LLMClient
 from .answers import Draft, no_dashes
 from .profile import Profile
 
-WORDS = 300  # four short paragraphs: well inside one page
+WORDS = 240  # three short paragraphs, then a plain close: a page a person will actually read
 
 # University of Michigan Career Center, "Cover Letter Resources" (the person's chosen guide, 2026-10-06):
 # 3-4 paragraphs; intro and interest (no generic opening, a referral if there is one); experiences tied to the job
 # description with specific examples and results, in the posting's language, not the resume repeated; a close that
 # sums up interest, thanks them, and may name the mission. Enthusiastic, confident but not imposing; no cliches; not
 # every sentence starting with "I". One page. AI helps draft and tailor; the person personalizes and reviews it.
-GUIDE = ("Follow the University of Michigan Career Center's cover letter guide: "
-         "Paragraph 1: who I am (my degree programs) and why this role and this company specifically; no generic "
-         "opening. Mention a referral ONLY if my note below names one; never invent a referral, a professor, a "
-         "conversation or any contact with the company. "
-         "Paragraphs 2 and 3: connect my experiences to what the job description asks for, with specific examples and "
-         "the results or numbers in my facts, using the posting's own words; explain what makes me qualified instead of "
-         "repeating resume lines. "
-         "Paragraph 4: sum up my interest, thank them, and if it fits name the company's mission or values. "
-         "Tone: enthusiastic, positive, confident but not imposing. Do not start most sentences with 'I'. No cliches "
-         "('outstanding candidate', 'passionate', 'perfect fit', 'To Whom It May Concern'). "
-         "Separate the four paragraphs with a blank line. "
-         "In paragraphs 2 and 3, reason from each experience to this job: name the skill, show it with one real "
-         "example from my facts (where, what I did, the result), then say what it means for this role's actual work. "
-         "Never use em dashes or en dashes; use commas, periods or 'and'.")
+GUIDE = ("Write like one real person writing to one recruiter, not like a template. Keep the Career Center's shape: why this "
+         "job, then what I've done that bears on it, in three short paragraphs. "
+         "Paragraph 1, two or three sentences: open with one specific thing about this job from the posting (a problem the team "
+         "owns, a kind of work, who it serves) and why it interests me. Do not open with my name, my degrees, the company's "
+         "mission statement or praise. Mention a referral ONLY if my note below names one; never invent a referral, a "
+         "professor, a conversation or any contact with the company. "
+         "Paragraphs 2 and 3: one story each, the two experiences in APPLICANT FACTS, naming the place. Say what the "
+         "situation was, what I did and what happened, retold in fresh words as if explaining it to someone across a table. "
+         "Do not copy resume wording. Add nothing to a story: no tool, result, date, or claim that anyone still uses "
+         "something unless that same story says so. Then say in one plain sentence what is the same about this job, in "
+         "your own words and different each time. Only link to work the story really shows: never say it prepared me for a "
+         "tool or task when the link is a stretch. "
+         "Write no closing paragraph and no thanks; those are added after. "
+         "Use contractions. Mix short sentences with longer ones. Don't begin a paragraph with 'At' or 'In my role as', and "
+         "don't start most sentences with 'I'. Never use these: honed, sharpened, this experience, directly, translates, "
+         "mirrors, demonstrates, my ability to, my capacity to, critical skill, key skill, essential, meaningful, "
+         "actionable, insights, shape the future, commitment to, dedication to, I believe, look forward, drive impact. "
+         "Separate paragraphs with a blank line. Never use em dashes or en dashes; use commas, periods or 'and'.")
+# What a machine-written letter sounds like (the person, 2026-11-10: "less robotic or gptish, more human")
+_ROBOT = re.compile(r"\bhon(?:ed|ing)\b|\bsharpen(?:ed|ing)\b|\bthis (?:experience|role|work) (?:taught|showed|gave|helped|allowed|required)|"
+                    r"\b(?:this|that) experience\b|\bdirectly (?:ties|tied|translates?|supports?|applies|applicable|impacts?|relevant)|"
+                    r"\btranslates? (?:directly|well|into)|\b(?:critical|key|essential|crucial|vital) (?:skill|part|asset|component)|"
+                    r"\bskills? (?:that )?(?:are|is|will be) (?:essential|critical|key)|\bmirrors?\b|\bdemonstrat(?:es|ing|ed) my\b|"
+                    r"\bmy (?:ability|capacity) to\b|\bmeaningful(?:ly)?\b|\bactionable\b|\bshap(?:e|ing) the future\b|"
+                    r"\b(?:commitment|dedication) to\b|\bI believe\b|\blook forward to\b|\bdrive (?:meaningful )?impact\b|"
+                    r"\bfits? (?:my|with my)\b|\bfoster(?:s|ing)?\b|\bin my role as\b|\bgraduate student pursuing\b|"
+                    r"\bdual master|\bthank you for considering\b|\bcontribut(?:e|ing) to [A-Z]\S* mission\b|\bthrive\b|\bbring a\b|"
+                    r"\bspeaks? to\b|\binsights?\b|\bdata-driven\b|\bdrive (?:growth|outcomes)\b|\bimprove outcomes\b|\bstrategic thinking\b", re.I)
+# More than a story can show (2026-11-10, the first plain-language letters: "they're using it now", "the last few years")
+_EMBELLISH = re.compile(r"\bstill (?:use|using)\b|\busing it (?:now|today)\b|\bto this day\b|\b(?:last|past) (?:few|several|\d+) years\b|"
+                        r"\byears? of\b|\btop (?:third|half|quarter)\b|\bdecisions faster\b|\breal results\b|\bexactly the kind\b", re.I)
+_NAME_OPENING = re.compile(r"^(?:I am|I['’]m|My name is)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s*,")
 _GENERIC = re.compile(r"to whom it may concern|outstanding candidate|perfect fit|i am writing to (?:express|apply)|"
                       r"passionate about|dream (?:job|company)|aligns? (?:well )?with|resonates?|your company", re.I)
 _CONTACT = re.compile(r"referr|recommended (?:me|by)|(?:spoke|talked|met|connected) with|introduced (?:me|by)|"
@@ -192,18 +210,62 @@ def _plainer(text: str, company: str = "") -> str:
     return no_dashes(re.sub(r"  +", " ", text))
 
 
+def _stiff(text: str) -> list[str]:
+    """Sentences that read as generated: stock bridges, and the "I'm <name>, a student pursuing..." opening."""
+    return [x for x in _sentences(text) if _ROBOT.search(x) or _NAME_OPENING.match(x)]
+
+
+def _close(company: str) -> str:
+    """Written here, not by the model: its closings all said the same empty thing about the company's mission."""
+    team = f"what the team at {company} is working on" if company else "what the team is working on"
+    return f"I'd like to hear more about {team}, and I'm glad to talk whenever it's useful. Thanks for reading."
+
+
+def school_sentence(profile: Profile) -> str:
+    """Where the person studies, said once and exactly, so the model never recites or garbles the degrees."""
+    now = [e for e in profile.education if e.expected]
+    if not now:
+        return ""
+    names = []
+    for e in now:
+        area = re.search(r"School of ([A-Z]\w+)$", e.school)
+        names.append("an MBA" if "business administration" in e.degree.lower() else
+                     f"a {e.degree}" + (f" in {area[1]}" if area and area[1] != "Business" else ""))
+    place = re.split(r",| School of", now[0].school)[0].strip()
+    place = f"the {place}" if place.startswith("University") else place
+    return f"I'm finishing {' and '.join(names)} at {place}."
+
+
+def pick_stories(profile: Profile, page_text: str, title: str, prefer: tuple[str, ...] = (), n: int = 2) -> list:
+    """The experiences closest to this posting, one per place: chosen here, because left to itself the model skipped the
+    hospital project on a healthcare role. Stories the person's target for this kind of role names count for more."""
+    from ..jobs import clean_job_text
+    from ..resume.auto import _relevance, job_concepts
+
+    vec = job_concepts(clean_job_text(page_text or ""), title)[0]
+    best: dict[str, tuple[float, object]] = {}
+    for x in profile.experience:
+        if not x.bullets:
+            continue
+        lift = 1.3 if any(p.lower() in x.employer.lower() for p in prefer) else 1.0
+        score = _relevance(vec, " ".join([x.title, *x.bullets])) * lift
+        if x.employer not in best or score > best[x.employer][0]:
+            best[x.employer] = (score, x)
+    return [x for _, x in sorted(best.values(), key=lambda kv: -kv[0])[:n]]
+
+
 def write_cover_letter(client: LLMClient, profile: Profile, company: str, title: str, page_text: str,
-                       instruction: str = "") -> Draft:
+                       instruction: str = "", prefer: tuple[str, ...] = ()) -> Draft:
     """The letter's body, four paragraphs, by the Career Center's guide. One model call, and a second only for what
     makes a letter untrue (a number, a claim or a referral not in the applicant's facts); smaller problems (a stock
     sentence) are fixed by leaving that sentence out. With the local model a call takes about a minute (it once
     took six minutes of rewrites for word counts and stock phrases, 2026-10-07)."""
-    from .answers import SYSTEM, _CLICHES, _clean_output, build_prompt, job_excerpt, unsupported_numbers
+    from .answers import SYSTEM, _CLICHES, _clean_output, _drop_misattributed, build_prompt, job_excerpt, misattributed, unsupported_numbers
 
     role = f"the {title} role" if title else "this role"
     at = f" at {company}" if company else ""
     question = f"Write the body of my cover letter for {role}{at}. No greeting, no sign-off, no headings."
-    hint = f"about {WORDS} words, 4 paragraphs"
+    hint = f"about {WORDS} words, 3 paragraphs"
     name = f"Call the company '{company}' by name, never 'your company'. " if company else ""
     words = _posting_words(profile, page_text, title)
     use = f"The posting's own keywords my experience shows (use 3-5 of them naturally, never as a list): {words}. " if words else ""
@@ -212,32 +274,50 @@ def write_cover_letter(client: LLMClient, profile: Profile, company: str, title:
     if asks and re.search(r"location|office|city", asks, re.I) and profile.location_preferences:
         must += (f"My office preferences, in order: {', '.join(profile.location_preferences[:3])} (offices I would "
                  f"like to work in; not where I live). ")
-    note = (f"{GUIDE} {name}{use}{must}My degrees, stated exactly: {_degrees(profile)}. "
-            f"MY NOTE: {instruction or '(none)'}").strip()
+    school = school_sentence(profile)
+    say_school = f"Use this sentence, word for word, in the first paragraph: \"{school}\" " if school else ""
+    note = f"{GUIDE} {name}{use}{must}{say_school}MY NOTE: {instruction or '(none)'}".strip()
     excerpt = job_excerpt(page_text)
-    facts = profile.facts_text() + "\n" + instruction
+    # the model sees only the two stories: what it is not shown it cannot attach to the wrong job
+    stories = pick_stories(profile, page_text, title, prefer) or profile.experience
+    told = profile.model_copy(update={"experience": stories, "skills": []})
+    facts = told.facts_text() + "\n" + instruction
     allowed = f"{facts}\n{excerpt}\n{question}"
-    prompt = build_prompt(profile, question, excerpt, None, note, "", hint, as_points=False)
+    prompt = build_prompt(told, question, excerpt, None, note, "", hint, as_points=False)
 
     def untrue(text: str) -> list[str]:
         out = [f"numbers not in my facts: {', '.join(bad)}" for bad in [unsupported_numbers(text, allowed)] if bad]
         if claims := unsupported_claims(text, facts):
             out.append("claims my facts do not show: " + ", ".join(claims))
+        if moved := misattributed(text, profile, instruction, excerpt):
+            out.append("one place given another's results: " + "; ".join(f"{n} is from {home}, not {name}" for n, name, home in moved))
         if _CONTACT.search(text) and not _CONTACT.search(instruction):
             out.append("a referral or contact I never gave")
+        if over := _EMBELLISH.search(text):
+            out.append(f"more than the stories say ('{over.group(0)}')")
         return out
 
-    text = _clean_output(client.complete(prompt, system=SYSTEM, max_tokens=900, temperature=0.4))
+    text = _clean_output(client.complete(prompt, system=SYSTEM, max_tokens=900, temperature=0.6))
     if problems := untrue(text):
         text = _clean_output(client.complete(
             f"{prompt}\n\nYOUR PREVIOUS LETTER:\n{text}\n\nWrite it again without: " + "; ".join(problems) +
             ". Say only what APPLICANT FACTS show. /no_think", system=SYSTEM, max_tokens=900, temperature=0.2))
+    if stiff := _stiff(text):  # one more try in plain words; the checks below still apply to what comes back
+        text = _clean_output(client.complete(
+            f"{prompt}\n\nYOUR PREVIOUS LETTER:\n{text}\n\nThese sentences sound machine-written:\n" +
+            "\n".join(f"- {x}" for x in stiff) + "\nRewrite the letter with the same facts, in plain spoken words, the way a "
+            "person talks. Only what APPLICANT FACTS show. /no_think", system=SYSTEM, max_tokens=900, temperature=0.6))
     warnings: list[str] = []
     if "\n\n" not in text and text.count("\n") >= 2:
         text = re.sub(r"\n+", "\n\n", text)  # paragraphs on single lines
     if bad := unsupported_numbers(text, allowed):
         text = _drop_sentences(text, lambda x: not unsupported_numbers(x, allowed))
         warnings.append(f"removed a sentence using numbers not in your resume: {', '.join(bad)}")
+    if moved := misattributed(text, profile, instruction, excerpt):
+        # paragraph by paragraph, so the letter keeps its paragraphs
+        text = "\n\n".join(_drop_misattributed(par, profile, instruction, excerpt) for par in text.split("\n\n")).strip()
+        warnings.append("removed a sentence giving one place another's results: " +
+                        "; ".join(f"{n} is from {home}, not {name}" for n, name, home in moved))
     if _CONTACT.search(text) and not _CONTACT.search(instruction):
         # a referral or contact the person never gave is not written, whatever the model does: those sentences go
         text = _drop_sentences(text, lambda x: not _CONTACT.search(x))
@@ -246,6 +326,9 @@ def write_cover_letter(client: LLMClient, profile: Profile, company: str, title:
         # still claiming something the facts do not show: those sentences go (a shorter letter beats a false one)
         text = _drop_sentences(text, lambda x: not unsupported_claims(x, facts))
         warnings.append("removed sentences claiming what your resume does not show: " + ", ".join(claims))
+    if over := _EMBELLISH.search(text):
+        text = _drop_sentences(text, lambda x: not _EMBELLISH.search(x))
+        warnings.append(f"removed a sentence saying more than your resume does ('{over.group(0)}')")
     if (again := _repeats(text)):
         # qwen3:8b sometimes says one thing twice ("My background in Python, Excel..." / "My work with Python, Excel...")
         text = _drop_sentences(text, lambda x: x not in again)
@@ -260,9 +343,12 @@ def write_cover_letter(client: LLMClient, profile: Profile, company: str, title:
     if (stock := _GENERIC.search(text) or _CLICHES.search(text)):
         text = _drop_sentences(text, lambda x: not (_GENERIC.search(x) or _CLICHES.search(x)))
         warnings.append(f"removed a stock sentence ('{stock.group(0)}')")
+    if (left := _stiff(text)) and len(text.split()) - sum(len(x.split()) for x in left) >= 130:
+        text = _drop_sentences(text, lambda x: x not in left)  # a shorter letter beats one that reads as generated
+        warnings.append("removed a sentence that read as machine-written")
     if len(text.split()) < 120:
         warnings.append("the letter came out short; add a paragraph of your own")
-    return Draft(text=text.strip(), warnings=warnings)
+    return Draft(text=f"{text.strip()}\n\n{_close(company)}", warnings=warnings)
 
 
 def letter_html(profile: Profile, body: str, company: str = "") -> str:
@@ -277,7 +363,7 @@ h1 {{ font-size: 15pt; margin: 0 0 2px; }} .contact {{ font-size: 9.5pt; color: 
 p {{ margin: 0 0 11px; }} .date {{ margin-bottom: 16px; }}
 </style></head><body>
 <h1>{html.escape(profile.full_name)}</h1><div class="contact">{html.escape(contact)}</div>
-<div class="date">{date.today().strftime("%B %-d, %Y")}</div>
+<div class="date">{date.today():%B} {date.today().day}, {date.today().year}</div>
 <p>{greeting}</p>{paras}<p>Sincerely,<br>{html.escape(profile.full_name)}</p>
 </body></html>"""
 

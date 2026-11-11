@@ -32,9 +32,11 @@ from pydantic import BaseModel, Field
 
 from ..config import Settings, apply_environment
 from ..jobs import clean_job_text, extract_facts, load_job_text
+from ..resume.career import CareerProfile, path_for as career_path
 
 PAGE = Path(__file__).with_name("desk.html")
 STAGES = ("saved", "applying", "applied", "skipped")
+OUTCOMES = ("", "rejected", "interview", "offer")  # what came of an application: "" is no answer yet
 MAX_TEXT = 40000
 ALLOW_PRIVATE_HOSTS = False  # tests serve postings from 127.0.0.1
 
@@ -86,6 +88,16 @@ class AppliedRequest(BaseModel):
     host: str = Field(default="", max_length=200)
     answers: list[dict] = Field(default_factory=list, max_length=30)  # what the person sent in free-text boxes
     resume_id: str = Field(default="", pattern=r"^(?:[0-9a-f]{12})?$")  # the tailored resume the form got ("" = default)
+    # the posting page the extension saw on this site before the form: a role not on the Desk is added from it
+    posting_url: str = Field(default="", max_length=2000)
+    posting_title: str = Field(default="", max_length=300)
+    posting_text: str = Field(default="", max_length=20000)
+
+
+class AppliedListRequest(BaseModel):
+    """Workday's Candidate Home: the person's submitted applications on that site, as the page lists them."""
+    url: str = Field(default="", max_length=2000)
+    page_text: str = Field(default="", max_length=30000)
 
 
 class BankDecision(BaseModel):
@@ -106,6 +118,8 @@ class AiWordingSettings(BaseModel):
 
 class PatchRequest(BaseModel):
     stage: str | None = None
+    outcome: str | None = None
+    letter: str | None = Field(default=None, max_length=6000)  # the person's own cover letter body; "" goes back to drafting one
     title: str | None = Field(default=None, max_length=200)
     company: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=2000)
@@ -159,7 +173,7 @@ def fetch_posting(url: str, settings: Settings) -> dict:
 EXTENSION_DIR = Path(__file__).resolve().parent.parent.parent / "extension"
 
 
-def greenhouse_form(url: str, settings) -> str | None:
+def greenhouse_form(url: str, settings, company: str = "") -> str | None:
     """Stripe, Roblox, Databricks... show Greenhouse postings on their own sites ("stripe.com/jobs/...?gh_jid=N"),
     where the form sits behind their Apply button. Greenhouse serves the same form directly given the company's
     board name, which the role search knows."""
@@ -178,6 +192,9 @@ def greenhouse_form(url: str, settings) -> str | None:
     # not in the search results: the site's own name is usually the board ("careers.roblox.com" -> "roblox")
     parts = [x for x in host.split(".") if x not in ("www", "careers", "jobs", "com", "io", "co", "org", "net")]
     boards += parts[-1:]
+    # or the employer's whole name ("IXL Learning" -> "ixllearning", on ixl.com, 2026-11-03)
+    if (slug := re.sub(r"[^a-z0-9]", "", company.lower())):
+        boards.append(slug)
     for board in dict.fromkeys(boards):
         form = f"https://job-boards.greenhouse.io/embed/job_app?for={board}&token={m[1]}"
         try:  # only a form that is really there: a wrong board name sends you to some board's job list
@@ -363,11 +380,17 @@ class DeskStore:
         raise HTTPException(status_code=404, detail="no such posting")
 
 
+def outcome_of(p: dict) -> str:
+    """What came of it: the choice made on the Desk, or a rejection already written in the notes."""
+    return p.get("outcome") or ("rejected" if re.match(r"\s*rejected\b", p.get("notes") or "", re.I) else "")
+
+
 def _summary(p: dict) -> dict:
     """A posting for the table: everything except its full text."""
     out = {k: v for k, v in p.items() if k != "text"}
     out["chars"] = len(p.get("text", ""))
     out["flags"] = flags_of(p)
+    out["outcome"] = outcome_of(p)
     return out
 
 
@@ -386,6 +409,34 @@ _STOP = set("the and for with our you your a an of to in at on job jobs careers 
 
 def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z][a-z&+]{2,}", (text or "").lower()) if w not in _STOP}
+
+
+# a role on Workday's Candidate Home with a status that means it was sent (not "Draft" / "In Progress")
+_SENT_STATUS = re.compile(r"\b(?:submitted|in review|under (?:review|consideration)|application received|received|"
+                          r"interview(?:ing)?|offer|not selected|no longer under consideration|closed|withdrawn)\b", re.I)
+_DRAFT_STATUS = re.compile(r"\b(?:draft|in progress|continue application|incomplete)\b", re.I)
+
+
+def listed_as_applied(items: list[dict], url: str, page_text: str) -> list[dict]:
+    """Desk postings on this Workday site that its Candidate Home lists as sent (Huron and Accenture, 2026-10-30: the
+    person landed there after submitting, and nothing marked the roles applied). Only the same site, only a title that
+    appears whole on the page with a sent status right after it."""
+    host = (urlparse(url).hostname or "").lower()
+    low = (page_text or "").lower()
+    out = []
+    for p in items:
+        if p.get("stage") == "applied" or (urlparse(p.get("url") or "").hostname or "").lower() != host:
+            continue
+        title = (p.get("title") or "").strip().lower()
+        if len(title) < 6:
+            continue
+        for m in re.finditer(re.escape(title), low):
+            after = low[m.end(): m.end() + 200]
+            sent, draft = _SENT_STATUS.search(after), _DRAFT_STATUS.search(after)
+            if sent and (not draft or sent.start() < draft.start()):  # this role's own status: the first one after it
+                out.append(p)
+                break
+    return out
 
 
 def match_applied(items: list[dict], url: str, title: str, page_text: str) -> dict | None:
@@ -516,6 +567,10 @@ def tailor_desk_posting(store: "DeskStore", run_tailor, pid: str, instruction: s
 MY_INFO = ("address", "city", "state", "postal_code", "country", "phone_type", "how_heard", "available_start", "preferred_name",
            "github_url", "gpa", "high_school_year", "languages", "interviewed_at", "relatives_at", "government_official",
            "conflict_of_interest")
+
+
+class CareerText(BaseModel):
+    text: str = Field(max_length=200_000)
 
 
 class MyInfo(BaseModel):
@@ -715,7 +770,11 @@ def register_desk(app: FastAPI, settings: Settings, require_token, run_tailor, b
                 if req.stage == "applied" and p.get("stage") != "applied":
                     p["applied_at"] = datetime.now().isoformat(timespec="seconds")
                 p["stage"] = req.stage
-            for k in ("title", "company", "notes"):
+            if req.outcome is not None:
+                if req.outcome not in OUTCOMES:
+                    raise HTTPException(status_code=422, detail=f"outcome must be one of {', '.join(o or 'blank' for o in OUTCOMES)}")
+                p["outcome"] = req.outcome
+            for k in ("title", "company", "notes", "letter"):
                 if getattr(req, k) is not None:
                     p[k] = getattr(req, k).strip()
             store.save(items)
@@ -751,6 +810,25 @@ def register_desk(app: FastAPI, settings: Settings, require_token, run_tailor, b
         path = write_tracker(settings, store.load())
         return FileResponse(path, filename=TRACKER_NAME,
                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    @app.get("/api/desk/career", dependencies=auth)
+    def get_career() -> dict:
+        """The person's permanent career context, as they edit it on My info."""
+        path = career_path(settings)
+        return {"text": path.read_text(encoding="utf-8") if path.exists() else ""}
+
+    @app.put("/api/desk/career", dependencies=auth)
+    def put_career(body: CareerText) -> dict:
+        try:
+            parsed = CareerProfile.model_validate(json.loads(body.text))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"Not saved: {str(e)[:300]}")
+        path = career_path(settings)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            path.with_suffix(".previous.json").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        path.write_text(json.dumps(parsed.model_dump(), indent=1, ensure_ascii=False), encoding="utf-8")
+        return {"saved": True, "tracks": len(parsed.tracks)}
 
     @app.get("/api/desk/me", dependencies=auth)
     def get_me() -> dict:
@@ -789,7 +867,11 @@ def register_desk(app: FastAPI, settings: Settings, require_token, run_tailor, b
         u = urlparse(url)
         if u.hostname == "jobs.lever.co" and not u.path.rstrip("/").endswith("/apply"):
             url = url.split("?")[0].rstrip("/") + "/apply"  # Lever's form is on its own page
-        if (form := greenhouse_form(url, settings)):
+        elif u.hostname == "jobs.ashbyhq.com" and not u.path.rstrip("/").endswith("/application"):
+            url = url.split("?")[0].rstrip("/") + "/application"  # Ashby's too (Uncountable, 2026-11-03: Overview opened)
+        elif (u.hostname or "").endswith((".myworkdayjobs.com", ".myworkdaysite.com")) and "/job/" in u.path and "/apply" not in u.path:
+            url = url.split("?")[0].rstrip("/") + "/apply/applyManually"  # Workday: past its "how do you want to apply?"
+        if (form := greenhouse_form(url, settings, p.get("company") or "")):
             url = form
         return url.split("#")[0]
 
@@ -877,6 +959,11 @@ def register_desk(app: FastAPI, settings: Settings, require_token, run_tailor, b
         with store.lock:
             items = store.load()
             p = match_applied(items, req.url, req.title, req.page_text)
+            if not p and len(req.posting_text.strip()) >= 300:
+                # a role applied to without saving it first: remembered from its posting page (the person, 2026-10-30:
+                # "every time we apply, have Project Tailor remember the roles automatically")
+                p = _new(req.posting_text, url=req.posting_url or req.url, title=req.posting_title, source="applied")
+                items.insert(0, p)
             kept = add_to_library(settings.profile_dir / "answer_library.json", req.answers,
                                   company=(p or {}).get("company", ""), title=(p or {}).get("title", "")) if req.answers else 0
             if kept:
@@ -899,6 +986,22 @@ def register_desk(app: FastAPI, settings: Settings, require_token, run_tailor, b
         print(f"desk: marked applied {p['id']} ({'already' if already else 'new'})", flush=True)
         return {"matched": p["id"], "title": p["title"], "company": p.get("company", ""), "already": already,
                 "kept_answers": kept}
+
+    @app.post("/api/desk/applied-list", dependencies=auth)
+    def mark_listed_applied(req: AppliedListRequest) -> dict:
+        """Workday's Candidate Home lists the applications sent on that site: the Desk's roles among them are applied."""
+        with store.lock:
+            items = store.load()
+            hits = listed_as_applied(items, req.url, req.page_text)
+            for p in hits:
+                p["stage"] = "applied"
+                p.setdefault("applied_at", datetime.now().isoformat(timespec="seconds"))
+            if hits:
+                store.save(items)
+                _update_tracker(items)
+        for p in hits:
+            print(f"desk: marked applied {p['id']} (listed on the site's candidate home)", flush=True)
+        return {"marked": [{"id": p["id"], "title": p["title"], "company": p.get("company", "")} for p in hits]}
 
     @app.delete("/api/desk/postings/{pid}", dependencies=auth)
     def delete_posting(pid: str) -> dict:

@@ -274,6 +274,7 @@
         <div class="stat"><div class="stat-n blue" id="stTotal">0</div><div class="stat-l">Postings</div></div>
         <div class="stat"><div class="stat-n green" id="stTailored">0</div><div class="stat-l">Tailored</div></div>
         <div class="stat"><div class="stat-n purple" id="stApplied">0</div><div class="stat-l">Applied</div></div>
+        <div class="stat"><div class="stat-n purple" id="stInterviews">0</div><div class="stat-l">Interviews</div></div>
         <div class="stat"><div class="stat-n amber" id="stDue">0</div><div class="stat-l">Due ≤7d</div></div>
       </div>
     </div>
@@ -471,6 +472,14 @@
           </div>
         </div>
       </div></div>
+      <div class="card"><div class="card-body">
+        <label>CAREER PROFILE</label>
+        <div class="note" style="color:var(--txt2);margin:6px 0">How you want to be positioned, your target tracks and what each is about.
+          Every role-fit read and tailored resume uses it. Update it as you gain experience. Your jobs and bullets stay in your resume;
+          "context" here informs the fit read only and never goes on a resume.</div>
+        <textarea id="mCareer" rows="16" spellcheck="false" style="width:100%;box-sizing:border-box;font:12px ui-monospace,monospace"></textarea>
+        <button class="btn-main" id="btnSaveCareer" style="margin-top:6px">Save career profile</button>
+      </div></div>
     </div>
 
     <div class="tab-content" id="tab-words">
@@ -656,6 +665,8 @@ function render() {
     const d = daysUntil(p.facts && p.facts.deadline);
     const stageSel = el("select", { title: "Where this application stands", onchange: (e) => setStage(p, e.target.value) },
       ["saved", "applying", "applied", "skipped"].map((s) => el("option", { value: s, selected: s === p.stage, text: s })));
+    const outcomeSel = p.stage !== "applied" ? null : el("select", { title: "What came of this application", onchange: (e) => setOutcome(p, e.target.value) },
+      [["", "no answer yet"], ["rejected", "rejected"], ["interview", "interview"], ["offer", "offer"]].map(([v, t]) => el("option", { value: v, selected: v === (p.outcome || ""), text: t })));
     const tr = el("tr", { class: selected === p.id ? "sel" : "" },
       el("td", { class: "rn", text: i + 1 }),
       el("td", { class: "td-role", onclick: () => openPreview(p.id) }, p.title, el("small", { text: p.company || "—" })),
@@ -663,7 +674,7 @@ function render() {
       el("td", { style: d === null ? "" : d < 0 ? "color:var(--red)" : d <= 7 ? "color:var(--amber)" : "", text: fmtDate(p.facts && p.facts.deadline) }),
       el("td", {}, (p.flags || []).map((f) => el("span", { class: "flag flag-" + f.level, text: f.text })), (p.flags || []).length ? null : "—"),
       el("td", {}, statusBadge(p)),
-      el("td", {}, stageSel),
+      el("td", {}, stageSel, outcomeSel),
       el("td", { style: "white-space:nowrap" },
         p.url ? el("button", { class: "icon-btn", title: "Apply: open the application and fill it (you review and submit)", onclick: () => applyNow(p) }, "🚀") : null,
         el("button", { class: "icon-btn", title: "Tailor", onclick: () => tailorOne(p.id) }, "✂"),
@@ -673,7 +684,10 @@ function render() {
   });
   $("stTotal").textContent = postings.length;
   $("stTailored").textContent = postings.filter((p) => p.status === "tailored").length;
-  $("stApplied").textContent = postings.filter((p) => p.stage === "applied").length;
+  const applied = postings.filter((p) => p.stage === "applied");
+  $("stApplied").textContent = applied.length;
+  const heard = applied.filter((p) => p.outcome === "interview" || p.outcome === "offer").length;
+  $("stInterviews").textContent = applied.length ? `${heard} (${Math.round(100 * heard / applied.length)}%)` : "0";
   $("stDue").textContent = postings.filter((p) => { const d = daysUntil(p.facts && p.facts.deadline); return d !== null && d >= 0 && d <= 7; }).length;
   $("btnTailorAll").disabled = busy || !postings.some((p) => p.status === "new");
 }
@@ -805,6 +819,12 @@ async function downloadExtension() {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function setOutcome(p, outcome) {
+  try { Object.assign(p, await getJSON(`/api/desk/postings/${p.id}`, { method: "PATCH", body: JSON.stringify({ outcome }) }));
+        log(`${p.title} → ${outcome || "no answer yet"}`, "info"); render(); }
+  catch (e) { toast(e.message, "error"); }
+}
+
 async function setStage(p, stage) {
   try { Object.assign(p, await getJSON(`/api/desk/postings/${p.id}`, { method: "PATCH", body: JSON.stringify({ stage }) }));
         log(`${p.title} → ${stage}`, "info"); render(); }
@@ -898,7 +918,14 @@ function reportCard(p, res, rep) {
   if (!res) return el("div", { class: "card" }, head, el("div", { class: "card-body" }, askRow, el("div", { class: "hint", text: "Not tailored yet." })));
   const list = (items, cls) => items && items.length ? el("ul", { class: cls || "" }, items.map((t) => el("li", { text: t }))) : el("div", { class: "hint", text: "—" });
   const worded = (rep.rewrites || []).map((r) => r.replace(/^([^:]+): used the '([^']+)' wording: '(.*)'$/, "$1 · $2: $3"));
-  return el("div", { class: "card" }, head, el("div", { class: "card-body rep" }, askRow,
+  const letterBox = el("textarea", { rows: 8, style: "width:100%;box-sizing:border-box;font:inherit", placeholder: "Your own cover letter for this role (body only). Leave blank and Tailor drafts one." });
+  letterBox.value = p.letter || "";
+  const letterRow = el("div", {}, el("h4", { text: "Your cover letter for this role" }), letterBox,
+    el("button", { class: "btn-sec", onclick: async () => {
+      try { Object.assign(p, await getJSON(`/api/desk/postings/${p.id}`, { method: "PATCH", body: JSON.stringify({ letter: letterBox.value.trim() }) })); toast("Saved. The next Fill attaches this letter."); }
+      catch (e) { toast(e.message, "error"); } } }, "Save letter"));
+  return el("div", { class: "card" }, head, el("div", { class: "card-body rep" }, askRow, letterRow,
+    fitReport(rep.fit),
     el("h4", { text: "What the posting stresses" }),
     el("div", {}, (rep.emphasis || []).map((c) => el("span", { class: "flag flag-blue", text: c.replace(/_/g, " ") })), (rep.emphasis || []).length ? null : "—"),
     el("h4", { text: "Education first" }), el("div", { style: "font-size:12.5px;color:var(--txt2)", text: rep.education_first ? `${rep.education_first} (${rep.education_reason})` : "—" }),
@@ -906,6 +933,22 @@ function reportCard(p, res, rep) {
     el("h4", { text: `Bullets worded for this posting (${worded.length})` }), list(worded),
     el("h4", { text: "Trimmed to fit one page" }), list(rep.trimmed),
     el("h4", { text: "Gaps and warnings" }), list([...(rep.gaps || []), ...(rep.warnings || [])], "gap")));
+}
+
+// The role-fit read of a posting (career profile + requirements matched to the person's own evidence)
+function fitReport(fit) {
+  if (!fit) return null;
+  const list = (items) => el("ul", {}, items.map((t) => el("li", { text: t })));
+  const pair = (r) => `${r.label}: ${r.text}` + (r.entry ? ` (${r.entry})` : "");
+  const c = fit.counts || {};
+  return el("div", {},
+    el("h4", { text: `Role fit: ${fit.score} of 100, ${fit.label}` }),
+    el("div", { style: "font-size:12.5px;color:var(--txt2)", text: (fit.track ? `${fit.track.name}${fit.track.consulting ? `, priority ${fit.track.priority}` : ""}. ` : "Outside your target areas. ") +
+      `Requirements: ${c.direct || 0} direct, ${c.transferable || 0} transferable, ${c.academic || 0} academic, ${c.missing || 0} missing.` }),
+    list(fit.dimensions.map((d) => `${d.name}: ${d.score === null ? "n/a" : d.score}. ${d.why}`)),
+    el("h4", { text: "Strongest matches" }), list((fit.strongest || []).map(pair)),
+    el("h4", { text: "Missing" }), (fit.missing || []).length ? list(fit.missing.map((r) => r.text)) : el("div", { class: "hint", text: "Nothing clearly missing." }),
+    el("h4", { text: "Recommended positioning" }), list([...(fit.positioning || []), ...(fit.notes || [])]));
 }
 
 // ── Find roles ───────────────────────────────────────────────────────────────
@@ -1365,6 +1408,10 @@ $("search").addEventListener("input", render);
 $("stageFilter").addEventListener("change", render);
 $("btnSavePrefs").addEventListener("click", savePrefs);
 $("btnSaveMe").addEventListener("click", saveMe);
+$("btnSaveCareer").addEventListener("click", async () => {
+  try { await getJSON("/api/desk/career", { method: "PUT", body: JSON.stringify({ text: $("mCareer").value }) }); toast("Saved. The next read of a role uses it."); }
+  catch (e) { toast("Not saved: " + e.message); }
+});
 $("btnTracker").addEventListener("click", downloadTracker);
 $("btnExtension").addEventListener("click", downloadExtension);
 $("btnDiscover").addEventListener("click", discoverCompanies);
@@ -1388,6 +1435,7 @@ document.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", ()
     await refresh();
     loadPrefs().catch((e) => log("Could not load search preferences: " + e.message, "fail"));
     loadMe().catch((e) => log("Could not load My info: " + e.message, "fail"));
+    getJSON("/api/desk/career").then((c) => { $("mCareer").value = c.text; }).catch(() => {});
     loadWords().catch((e) => log("Could not load wordings: " + e.message, "fail"));
     loadFind();
     if (await searchStatus().catch(() => false)) runSearchPollOnly();

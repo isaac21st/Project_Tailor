@@ -32,6 +32,7 @@ _PATTERNS: dict[str, list[str]] = {
         r"e-?signature", r"electronic signature", r"\bsignature\b", r"\bconsent\b", r"\bat least 1[68] years\b",
         r"\b(?:over|above) (?:the age of )?1[68]\b", r"\b1[68] years (?:of age )?or older\b", r"non[- ]?compete",
         r"acknowledg(?:e)?ment", r"receive (?:communications|messages|texts|updates)|\bsms\b|whatsapp|text messages",
+        r"process (?:your|my) personal (?:information|data)", r"arbitrat", r"\bai (?:policy|usage policy)\b|policy on (?:the )?use of ai|candidate ai",
     ],
     "government_id": [
         r"social security", r"\bssn\b", r"passport", r"driver'?s licen[sc]e", r"date of birth", r"\bdob\b",
@@ -44,6 +45,15 @@ _COMPILED = {cat: [re.compile(p, re.I) for p in pats] for cat, pats in _PATTERNS
 # a name box whose helper text says "as on your passport or driver's license" is still just a name
 _NAME_FIELD = re.compile(r"\b(?:first|middle|last|given|family|full|legal|preferred)[ _-]?name\b|\bsurname\b|\bsuffix\b", re.I)
 
+
+# "Do you require any reasonable accommodations to participate in the interview process?" (Accenture, 2026-10-30): it
+# names disabilities, but it is not the disability self-identification; the saved disability answer ("Yes") was put in
+# it. The person answers it.
+_ACCOMMODATION = re.compile(r"reasonable accommodations?|require (?:any )?accommodations?|accommodations? (?:to|for|during) "
+                            r"(?:participate|the interview|interview|apply)", re.I)
+
+_PORTFOLIO_LINK = re.compile(r"\b(?:portfolio|website|link|url)\b", re.I)
+_IF_PASSWORD = re.compile(r"\bif (?:the|your|it|any)[^.?]{0,60}password", re.I)
 
 _NEEDS_SPONSOR = re.compile(r"\b(?:require|need)s?\b[^?.]{0,60}\bsponsor|\bsponsor\w*\b[^?.]{0,30}\b(?:required|needed)\b")
 
@@ -66,6 +76,13 @@ def classify(field: FormField) -> str | None:
     # it says "work authorization"; "authorized to work without sponsorship?" stays a work-authorization question.
     if _NEEDS_SPONSOR.search(own or text) or (not own.strip() and _NEEDS_SPONSOR.search(text)):
         return "sponsorship"
+    # "... with or without a reasonable accommodation" is the law's wording on a question about something else (Plaid, 2026-11-04)
+    if _ACCOMMODATION.search(re.sub(r"with or without (?:a )?(?:reasonable )?accommodations?", "", own or text)):
+        return "accommodation"
+    # "Please provide a link to your portfolio. If the file is password protected, please also provide your password."
+    # (DoorDash, 2026-10-30): a portfolio link, not a password box; a password only if one is set
+    if field.type != "password" and _PORTFOLIO_LINK.search(own) and _IF_PASSWORD.search(own):
+        return None
     for category, patterns in _COMPILED.items():
         if any(p.search(text) for p in patterns):
             if category == "government_id" and _NAME_FIELD.search(own) and not any(p.search(own) for p in patterns):

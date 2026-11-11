@@ -41,6 +41,14 @@ Tailor answers sensitive questions **only** from here; an empty value means it a
 | `background_check_ok` | `"Yes"` |
 | `relocation_ok_cities` | `["San Francisco", "New York"]` |
 | `in_person_max_percent` | `100` |
+| `acknowledge_notices` | `"Yes"`: tick privacy notices, terms, "I agree" and AI-policy acknowledgements. Signatures and age statements stay yours. |
+| `sms_opt_in` | `"No"` or `"Yes"`: the answer to "receive SMS / WhatsApp updates?" |
+| `arbitration` | `"Accept"`: accept arbitration agreements on applications. |
+| `desired_compensation` | What to answer to pay expectation questions, in your own words (`"$120,000"`). Empty: you answer them. |
+| `interview_accommodation` | The answer to "do you need accommodations to interview?" Empty: you answer it. |
+| `security_clearance` | `"No"` or `"Yes"`: whether you hold an active clearance. Empty: you answer it. |
+| `government_employment` | `"Yes"`: the answer to "employed by a government or state-owned entity?" (a public university counts). |
+| `company_questions` | `"No"`: the answer to questions about your ties to the company or to governments (a project with them, a non-compete or NDA, a government job), unless My info says otherwise. Empty: you answer them. |
 | `gender`, `pronouns`, `transgender`, `hispanic_latino`, `race`, `veteran`, `disability`, `disability_detail` | Your own wording, or a form's "decline to answer" option. Leave empty to answer each form yourself. |
 
 ## `answer_sheet.json`: your answers to specific questions (optional)
@@ -67,3 +75,11 @@ All about your resume, so none of it is built in. See the top of `tailor/resume/
 - `network/connections.json`: your LinkedIn connections, if you import LinkedIn's `Connections.csv` on the Network page.
 - `network/autopilot.json`: the daily referral plan (time, how many people to line up, Mac notification).
 - `public_export_map.json`: only for `scripts/export_public.py`: personal words to replace when you share a copy.
+
+## Career profile and role fit (optional)
+
+`career_profile.json` in your profile folder says how you want to be positioned, which kinds of roles you are after and which
+of your experience answers which need (see `examples/profile/career_profile.json`). With it, every posting gets a role-fit read:
+six scored areas, each requirement labeled direct, transferable, academic or missing, and suggested positioning. Tailoring leans
+toward the evidence that kind of role cares about. The `context` notes inform the fit read only; they never go on a resume, and
+the truth check is unchanged. Edit it on the Desk under My info. Without the file, none of this runs.

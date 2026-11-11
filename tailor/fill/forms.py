@@ -37,7 +37,8 @@ class Action(BaseModel):
     # needs_you: the person must answer | skip: leave empty
     # cover: a cover letter written for this posting goes here (an upload gets the PDF, a text box the text)
     # transcript: the person's own transcript PDF (profile/transcript.pdf) is attached
-    kind: Literal["fill", "select", "combobox", "check", "upload", "draft", "cover", "transcript", "needs_you", "skip"]
+    # multi: several picks in one search list (Workday's "Type to Add Skills"), one per line of `value`
+    kind: Literal["fill", "select", "combobox", "multi", "check", "upload", "draft", "cover", "transcript", "needs_you", "skip"]
     value: str | None = None
     source: Literal["profile", "answer_sheet", "llm", "none"] = "none"
     category: str | None = None  # why it is sensitive, if it is

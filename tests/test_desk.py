@@ -95,6 +95,18 @@ class DeskTests(unittest.TestCase):
     def add(self, **body):
         return self.c.post("/api/desk/postings", json=body, headers=H)
 
+    def test_a_role_applied_to_without_saving_it_is_remembered(self):  # the person, 2026-10-30
+        text = "Business Analyst. Responsibilities: analyze data, build models, support client teams. " * 8
+        r = self.c.post("/api/desk/applied", headers=H, json={
+            "url": "https://jobs.lever.co/acme/abc/thanks", "title": "Thanks", "page_text": "Thank you for applying!",
+            "posting_url": "https://jobs.lever.co/acme/abc", "posting_title": "Business Analyst", "posting_text": text}).json()
+        self.assertTrue(r["matched"])
+        p = next(x for x in self.c.get("/api/desk/postings", headers=H).json() if x["id"] == r["matched"])
+        self.assertEqual((p["stage"], p["title"]), ("applied", "Business Analyst"))
+        # without a posting it saw, nothing is invented
+        none = self.c.post("/api/desk/applied", headers=H, json={"url": "https://x.example/thanks", "page_text": "Thanks"}).json()
+        self.assertIsNone(none["matched"])
+
     def test_the_apply_queue_hands_out_postings_one_at_a_time(self):
         body = "Product Manager. Requirements: product strategy, SQL, user research, roadmaps. " * 10
         a = self.add(text=body, url="https://jobs.lever.co/acme/11111111-1111-1111-1111-111111111111", source="text").json()["id"]
@@ -108,6 +120,11 @@ class DeskTests(unittest.TestCase):
         self.assertEqual((first["id"], first["left"]), (a, 1))
         self.assertIn("#tailor-fill=", first["url"])
         self.assertTrue(first["url"].endswith("/apply#tailor-fill=" + first["url"].split("#tailor-fill=")[1]))  # Lever's form page
+        for link, ending in (("https://jobs.ashbyhq.com/acme/44444444-4444-4444-4444-444444444444", "/application"),
+                             ("https://acme.wd1.myworkdayjobs.com/acme/job/Chicago/Analyst_JR-1", "/apply/applyManually")):
+            pid = self.add(text=body + link, url=link, source="text").json()["id"]
+            opened = self.c.post(f"/api/desk/postings/{pid}/open", headers=H).json()["url"]
+            self.assertEqual(opened.split("#")[0], link + ending)  # the form itself, not the overview
         self.assertEqual(self.c.post("/api/desk/queue/next", headers=H).json()["id"], b)
         self.assertTrue(self.c.post("/api/desk/queue/next", headers=H).json()["done"])
         self.assertEqual(self.c.post("/api/desk/queue/next").status_code, 401)
@@ -211,6 +228,14 @@ class DeskTests(unittest.TestCase):
         self.assertEqual(self.c.get("/api/desk/postings", headers=H).json(), [])
         self.assertEqual(self.c.delete(f"/api/desk/postings/{pid}", headers=H).status_code, 404)
 
+    def test_what_came_of_an_application(self):
+        pid = self.add(text=POSTING, source="text").json()["id"]
+        self.assertEqual(self.c.patch(f"/api/desk/postings/{pid}", json={"outcome": "interview"}, headers=H).json()["outcome"], "interview")
+        self.assertEqual(self.c.patch(f"/api/desk/postings/{pid}", json={"outcome": "maybe"}, headers=H).status_code, 422)
+        self.c.patch(f"/api/desk/postings/{pid}", json={"outcome": ""}, headers=H)
+        noted = self.c.patch(f"/api/desk/postings/{pid}", json={"notes": "Rejected (reported 2026-11-03)"}, headers=H)
+        self.assertEqual(noted.json()["outcome"], "rejected")  # a rejection already written in the notes counts
+
     # ---- tailoring ----
     @unittest.skipUnless(BASE_PATH.exists(), "needs the base resume")
     def test_tailor_a_posting_and_fetch_its_resume(self):
@@ -252,6 +277,16 @@ class AppliedTests(unittest.TestCase):
         items = [{"id": "rb", "url": "https://careers.roblox.com/jobs/8143976?gh_jid=8143976", "title": "APM"}]
         hit = desk.match_applied(items, "https://job-boards.greenhouse.io/embed/job_app/confirmation?for=roblox&token=8143976", "", "Thanks")
         self.assertEqual(hit["id"], "rb")
+
+    def test_workdays_candidate_home_marks_the_roles_it_lists_as_sent(self):  # Huron, Accenture (2026-10-30)
+        items = [{"id": "a", "url": "https://acme.wd1.myworkdayjobs.com/acme/job/Chicago/Project-Consultant_JR-1", "title": "Project Consultant"},
+                 {"id": "b", "url": "https://acme.wd1.myworkdayjobs.com/acme/job/Chicago/Trade-Analyst_JR-2", "title": "Trade Analyst"},
+                 {"id": "c", "url": "https://other.wd5.myworkdayjobs.com/x/job/Project-Consultant_JR-3", "title": "Project Consultant"},
+                 {"id": "d", "url": "https://acme.wd1.myworkdayjobs.com/acme/job/Chicago/Analyst_JR-4", "title": "Data Strategy Analyst"}]
+        home = ("Candidate Home  My Applications  Active  Project Consultant  JR-0016378  Submitted  10/30/2026  "
+                "Data Strategy Analyst  JR-4  Draft  Continue Application")
+        hits = desk.listed_as_applied(items, "https://acme.wd1.myworkdayjobs.com/en-US/acme/userHome", home)
+        self.assertEqual([p["id"] for p in hits], ["a"])  # not the other site's, not the draft, not one never listed
 
     def test_never_guesses(self):
         self.assertIsNone(self.m("https://jobs.lever.co/acme/thanks", "", "Thank you for applying: Business Operations"))

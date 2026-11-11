@@ -44,6 +44,51 @@ class NumberGuardTests(unittest.TestCase):
         self.assertEqual(unsupported_numbers("I have 8 years of experience.", "nothing"), ["8"])
 
 
+# a made-up person with two places, each with its own results
+TWO = Profile(
+    first_name="Jordan", last_name="Rivera", email="j@example.com", phone="555",
+    experience=[Experience(employer="Harbor Club", title="Brand Lead", start=YearMonth(year=2025, month=1), current=True,
+                           bullets=["Led the website redesign, with site traffic up 839% and eight investments supported by 2025"]),
+                Experience(employer="Lakeview Rentals", title="Operations Analyst", start=YearMonth(year=2022, month=6),
+                           end=YearMonth(year=2024, month=5), bullets=["Cut weekly reporting time by 40%"])],
+)
+NOTE = "LSDA and marketing, built a website for the student org and grew memberships and officers by 50%"
+
+
+class AttributionTests(unittest.TestCase):
+    """2026-10-28 (Palantir): a group from the person's note was given another organization's results."""
+
+    def test_another_organizations_results_are_caught(self):
+        text = ("At LSDA, I built a website for a student organization, growing memberships and officers by 50%. "
+                "I led the redesign, driving 839% more traffic and supporting eight investments.")
+        from tailor.fill.answers import misattributed
+        got = misattributed(text, TWO, NOTE)
+        self.assertEqual(sorted(n for n, _, _ in got), ["8", "839"])
+        self.assertTrue(all(name == "LSDA" and home == "Harbor Club" for _, name, home in got))
+
+    def test_each_place_with_its_own_results_passes(self):
+        from tailor.fill.answers import misattributed
+        text = ("At Harbor Club, site traffic rose 839% after my redesign. At Lakeview Rentals I cut reporting time by 40%. "
+                "At LSDA, memberships and officers grew 50%.")
+        self.assertEqual(misattributed(text, TWO, NOTE), [])
+        self.assertEqual(misattributed("Our operations team cut reporting time by 40%.", TWO), [])  # a common word is no name
+
+    def test_a_draft_that_keeps_moving_results_loses_that_sentence(self):
+        bad = ("At LSDA, I built a website and grew memberships and officers by 50%. "
+               "I drove 839% more traffic. It taught me to start from what members need.")
+        d = draft_answer(Scripted(bad), TWO, "Tell us about a problem you solved.", instruction=NOTE)
+        self.assertNotIn("839", d.text)
+        self.assertIn("50%", d.text)
+        self.assertTrue(any("839 is from Harbor Club, not LSDA" in w for w in d.warnings), d.warnings)
+
+    def test_the_model_is_told_which_result_belongs_where(self):
+        client = Scripted("At LSDA, I grew memberships 50% and drove 839% more traffic.",
+                          "At LSDA, I built a website and grew memberships and officers by 50%.")
+        d = draft_answer(client, TWO, "Tell us about a problem you solved.", instruction=NOTE)
+        self.assertIn("839 is from Harbor Club, not LSDA", client.prompts[1])
+        self.assertFalse(any("another's results" in w for w in d.warnings), d.warnings)
+
+
 class DraftTests(unittest.TestCase):
     def test_clean_answer_is_returned_untouched(self):
         client = Scripted("I cut reporting time by 40% at Acme Corp, and I want to bring that rigor here.")
@@ -169,6 +214,13 @@ class BeyondResumeTests(unittest.TestCase):
 
         with self.assertRaises(NeedsApplicant):
             draft_answer(Scripted("A few years ago I planned a road trip with friends."), PROFILE, self.Q)
+
+    def test_personal_favorites_are_never_made_up(self):
+        from tailor.fill.answers import NeedsApplicant
+
+        for q in ("What's your favorite junk food?", "What's your favourite book?", "What is your superpower?"):
+            with self.assertRaises(NeedsApplicant, msg=q):  # Sierra, 2026-11-10: "Flaming Hot Cheetos" and a childhood memory
+                draft_answer(Scripted("My favorite is Flaming Hot Cheetos."), PROFILE, q)
 
     def test_the_form_plan_leaves_it_to_the_person(self):
         from tailor.fill.forms import FormField

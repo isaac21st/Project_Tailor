@@ -1,0 +1,19 @@
+# Personal data never belongs in this repository: it lives in ~/project_tailor_data (see README).
+config.toml
+My_Application_Info.json
+*_Resume*.pdf
+*.pdf
+reports/
+staged_extension/
+project_tailor_data/
+data/
+*.zip
+# Python / editors
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.pytest_cache/
+.idea/
+.vscode/

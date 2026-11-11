@@ -96,7 +96,8 @@ document.addEventListener("click", (e) => {
   press(b.id || b.className);
   if (b.id === "add-edu") setTimeout(addSchool, 150);
   if (b.id === "add-work") setTimeout(addJob, 150);
-  if (b.id === "submit") window.__submitted = true;
+  if (b.id === "submit") { window.__submitted = true; sessionStorage.setItem('submitted', '1');
+    document.getElementById("step").innerHTML = "<h2>Thank you for applying!</h2>"; }
   if (b.id === "next") {
     const missing = [...document.querySelectorAll('#step [required]')].filter((x) => x.type === 'radio' ? false : !x.value);
     const radios = document.querySelectorAll('#step input[type=radio]');
@@ -192,9 +193,13 @@ class MultiStepE2E(unittest.TestCase):
         cls.site.shutdown()
         cls.tmp.cleanup()
 
-    def walk(self, start: str):
-        self.sw.evaluate("() => chrome.storage.local.remove('autoFlow')")
+    def walk(self, start: str, submit_for_me: bool = False, until: str = "Ready for your review"):
+        self.sw.evaluate("() => chrome.storage.local.remove(['autoFlow', 'autoSubmitLog'])")
+        self.sw.evaluate("on => chrome.storage.local.set({ autoSubmit: on })", submit_for_me)
         page = self.ctx.new_page()
+        if os.environ.get("MS_DEBUG"):
+            page.on("console", lambda m: print("console:", m.type, m.text[:300], flush=True))
+            page.on("pageerror", lambda e: print("pageerror:", str(e)[:300], flush=True))
         page.goto(f"http://{HOST}:{self.site_port}{start}")
         # the person presses Fill once (4 boxes is too few to fill on open); every later step happens by itself
         page.wait_for_selector("#tailor-panel-host", state="attached", timeout=10000)
@@ -215,17 +220,21 @@ class MultiStepE2E(unittest.TestCase):
                     last = cur
                 page.wait_for_timeout(400)
         # fill on open, then on to the next step by itself (3 s countdowns), until Review
-        page.wait_for_function("() => /Review your application/.test(document.body.innerText) && "
-                               "/Ready for your review/.test(document.querySelector('#tailor-panel-host')?.shadowRoot?.getElementById('status')?.textContent || '')",
-                               timeout=90000)
+        page.wait_for_function("() => /Review your application|Thank you for applying/.test(document.body.innerText) && "
+                               "new RegExp(arguments[0]).test(document.querySelector('#tailor-panel-host')?.shadowRoot?.getElementById('status')?.textContent || '')"
+                               .replace("arguments[0]", json.dumps(until)), timeout=120000)
         page.wait_for_timeout(1500)
+        got_log = self.sw.evaluate("() => chrome.storage.local.get('autoSubmitLog').then((s) => s.autoSubmitLog || [])")
         got = page.evaluate("""() => ({ vals: JSON.parse(sessionStorage.getItem('vals') || '{}'),
-                                        pressed: JSON.parse(sessionStorage.getItem('pressed') || '[]'), submitted: !!window.__submitted,
+                                        pressed: JSON.parse(sessionStorage.getItem('pressed') || '[]'), submitted: !!sessionStorage.getItem('submitted'),
+                                        status: document.querySelector('#tailor-panel-host').shadowRoot.getElementById('status').textContent,
                                         review: document.querySelector('#tailor-panel-host').shadowRoot.getElementById('reviewlist')?.innerText || '' })""")
         page.close()
+        self.sw.evaluate("() => chrome.storage.local.set({ autoSubmit: false })")
+        got["log"] = got_log
         return got
 
-    def check(self, got):
+    def check(self, got, submitted: bool = False):
         v = got["vals"]
         self.assertEqual((v["fn"], v["ln"], v["em"]), ("Jane", "Doe", "jane@example.com"))
         self.assertEqual(len(v["edu"]), 3)  # three schools
@@ -236,9 +245,10 @@ class MultiStepE2E(unittest.TestCase):
         self.assertTrue(v["dis:yes"])
         self.assertFalse(v["dis:no"] or v["dis:na"])
         self.assertEqual(got["pressed"].count("next"), 3)  # three steps on, then stopped at Review
-        for never in ("submit", "back", "save"):
+        for never in ("back", "save"):
             self.assertNotIn(never, got["pressed"])
-        self.assertFalse(got["submitted"])
+        self.assertEqual(got["pressed"].count("submit"), int(submitted))
+        self.assertEqual(got["submitted"], submitted)
 
     def test_single_page_app(self):
         self.check(self.walk("/apply"))
@@ -253,6 +263,19 @@ class MultiStepE2E(unittest.TestCase):
         got = self.walk("/shadow")
         self.check(got)
         self.assertIn("Drafted answer: Why do you want to work at Acme Steps?", got["review"])  # listed at the end, before Submit
+
+
+    # "Submit for me" (the person, 2026-10-28): on, a complete application is submitted once after the countdown
+    def test_submit_for_me_submits_a_complete_application_once(self):
+        got = self.walk("/apply", submit_for_me=True, until="the site confirmed it")
+        self.check(got, submitted=True)
+        self.assertEqual([x["outcome"] for x in got["log"]], ["submitted"])
+
+    def test_submit_for_me_waits_for_drafted_answers(self):  # a written answer the local model drafted: the person reads it
+        got = self.walk("/shadow", submit_for_me=True, until="Not submitted for you")
+        self.check(got)
+        self.assertIn("drafted 1 written answer", got["status"])
+        self.assertEqual(got["log"], [])
 
 
 if __name__ == "__main__":

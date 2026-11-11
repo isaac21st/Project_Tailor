@@ -11,6 +11,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from ..config import Settings
+from ..resume.auto import confirmed_skills
+from ..resume.career import load_career
+from ..resume.fit import assess_fit
+from ..resume.schema import Resume
 from ..jobs.search import (FOCUS, FOCUS_LABELS, Prefs, SearchStore, base_title, company_name, discover, discover_workday, grouped, import_found, rank_found,
                            host_of, link_desk, run_search, spread)
 from .desk import add_posting_record, tailor_desk_posting
@@ -80,6 +84,20 @@ def register_search(app: FastAPI, settings: Settings, auth: list, desk_store, ru
     def resume_text() -> str:
         path = settings.profile_dir / "base_resume.json"
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def rate(job: dict) -> dict | None:
+        """The same role-fit read the extension and the Desk show, so Find roles ranks by the person's own targets."""
+        career, resume = load_career(settings), resume_text()
+        if career is None or not resume:
+            return None
+        try:
+            return assess_fit(Resume.model_validate_json(resume), job.get("text") or "", job.get("title") or "",
+                              f"{job.get('company', '')} {job.get('url', '')}", career, confirmed_skills(settings))
+        except Exception as e:  # a read that fails leaves the plain ranking in place
+            print(f"fit read failed: {type(e).__name__}", flush=True)
+            return None
+
+    store.rate = rate
 
     def start(reason: str) -> bool:
         if not run_lock.acquire(blocking=False):

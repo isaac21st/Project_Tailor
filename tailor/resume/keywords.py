@@ -248,13 +248,14 @@ class Keyword:
     weight: float
     term: Term | None = None  # the vocabulary entry, when there is one
     verb: str = ""  # for kind == "verb": the base form
+    any_case: bool = False  # a phrase read from the posting's own lists ("patient safety"): matched in any case
 
     def found_in(self, text: str) -> bool:
         if self.kind == "verb":
             return re.search(rf"\b{re.escape(past(self.verb))}\b|\b{re.escape(self.verb)}(?:s|ing)?\b", text, re.I) is not None
         if self.term is not None:
             return self.term.on_resume().search(text) is not None
-        return re.search(rf"(?<![\w/]){re.escape(self.name)}(?![\w/])", text, re.I if self.kind != "hard" else 0) is not None
+        return re.search(rf"(?<![\w/]){re.escape(self.name)}(?![\w/])", text, re.I if self.kind != "hard" or self.any_case else 0) is not None
 
 
 @dataclass
@@ -302,6 +303,51 @@ def clean_title(title: str) -> str:
     return ", ".join(keep[:2]) if keep else (title or "").strip()
 
 
+# Any field's terms, not only the vocabulary's (2026-11-04: on a software resume it saw Python but not Kubernetes or
+# Terraform; on a nurse's, not Epic or patient safety). Read from the posting's own lists: "Go, Python, Terraform" gives
+# named tools, "staff scheduling, patient safety" gives skill phrases. These only count for matching and ordering:
+# nothing here is ever added to a resume, because only vocabulary terms with evidence can be.
+_LIST_ITEM_SPLIT = re.compile(r"[,;:()•]|\s+(?:and|or|as well as|including|such as|like)\s+|\.\s", re.I)
+_NAMED_TOOL = re.compile(r"^[A-Z][A-Za-z0-9+#.-]*[A-Za-z0-9+#]$|^[A-Z]$")
+_NOT_A_NAME = set("""The A An And Or For With Our Your We You Will Strong Excellent Experience Required Preferred Ability Bachelor Master
+Masters Degree Qualifications Responsibilities Requirements Skills Years Year Must Plus Including Knowledge Understanding Proficiency
+Familiarity Working Work Team Teams Manager Lead Senior Junior Staff Remote Hybrid United States America English Spanish
+January February March April May June July August September October November December Monday Friday
+New York San Francisco Chicago Boston Seattle Austin Washington Los Angeles London Denver Atlanta""".split())
+_PHRASE_WORD = re.compile(r"^[a-z][a-z-]+$")
+_NOT_A_SKILL_START = set("""a an the our your their this that these those you we they it strong excellent good great proven ability able
+experience experienced years year must plus all any some other more most new high very well highly knowledge understanding familiarity
+proficiency passion working work responsible reporting duties various multiple including to of in on for with by at from as is are be
+will can may should need needs want wants have has help helps ensure ensures support supports make makes""".split())
+_NOT_A_SKILL_END = set("""a an the of to in on for with by at from and or is are be you we team teams people others role company job work
+experience skills ability years year required preferred etc things""".split())
+
+
+def _listed_terms(text: str, title: str) -> tuple[list[str], list[str]]:
+    """(named tools, skill phrases) from the lists in one block of a posting; a block with no list gives nothing."""
+    pieces = [p.strip(" .!?-–—*") for p in _LIST_ITEM_SPLIT.split(text)]
+    pieces = [p for p in pieces if p]
+    if len(pieces) < 3:
+        return [], []
+    tools, phrases = [], []
+    lowered = text.lower()
+    for p in pieces:
+        words = p.split()
+        if len(words) == 1 and _NAMED_TOOL.match(p) and p not in _NOT_A_NAME and len(p) > 1:
+            # "Docker" in a list, and never written in lower case in this posting: a name, not a capitalized word
+            if p.lower() not in re.findall(r"\b[a-z][a-z+#.-]*\b", text) and not re.search(rf"\b{re.escape(p)}\b", title or ""):
+                tools.append(p)
+        elif 2 <= len(words) <= 3 and all(_PHRASE_WORD.match(w.lower()) for w in words):
+            low = [w.lower() for w in words]
+            if low[0] in _NOT_A_SKILL_START or low[-1] in _NOT_A_SKILL_END or low[0] in ACTION_VERBS or low[0].endswith("ly"):
+                continue
+            if p != p.lower() and p != p.capitalize():
+                continue  # "New York City", a name rather than a skill
+            phrases.append(" ".join(low))
+    del lowered
+    return tools, phrases
+
+
 def extract_keywords(job: CleanJob, title: str = "") -> Keywords:
     """Step 1: the posting's keywords, each weighted by kind (hard > industry > soft) and by where it is asked for
     (required > responsibilities > preferred > the rest); boilerplate is never read."""
@@ -347,6 +393,19 @@ def extract_keywords(job: CleanJob, title: str = "") -> Keywords:
             for v in re.findall(r"(?:^|,|;|\band\b)\s*([a-z-]+)\b", text):  # "gather feedback, and analyze data"
                 if v in ACTION_VERBS:
                     add(v.capitalize(), "verb", 0.4 * mult, verb=v)
+    listed = 0
+    for kind, text in blocks:
+        if text == title or (structured and kind not in ("required", "preferred", "skills", "responsibilities")):
+            continue
+        mult = _KIND_WEIGHT.get(kind, 0.7)
+        tools, phrases = _listed_terms(text, title)
+        for tok in tools:
+            if not any(t.rx().fullmatch(tok) for t in VOCAB):
+                add(tok, "hard", 1.5 * mult)
+        for phrase in phrases:
+            if listed < 15 and not any(t.rx().fullmatch(phrase) for t in VOCAB) and ("hard:" + phrase) not in best:
+                listed += 1
+                best["hard:" + phrase] = Keyword(phrase, "hard", 1.0 * mult, any_case=True)
     items = sorted(best.values(), key=lambda k: -k.weight)
     # a posting names a handful of verbs that matter; the long tail is noise
     verbs = [k for k in items if k.kind == "verb"][:10]

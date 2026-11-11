@@ -533,6 +533,15 @@ class SearchStore:
         self.prefs_path = self.dir / "prefs.json"
         self.results_path = self.dir / "results.json"
         self.lock = threading.Lock()
+        self.rate: Callable[[dict], dict | None] | None = None  # the role-fit read, when the person has a career profile
+
+    def read_fit(self, job: dict) -> None:
+        """Rank by how the role fits this person's targets and evidence, in place of the plain concept overlap."""
+        read = self.rate(job) if self.rate else None
+        if read:
+            job["fit"] = read["score"]
+            place = read["track"]["name"] if read["track"] else "Outside your targets"
+            job["why"] = [f"{place}: {read['label'].lower()}"] + job.get("why", [])
 
     def prefs(self) -> Prefs:
         return Prefs.load(self.prefs_path)
@@ -610,6 +619,7 @@ def run_search(prefs: Prefs, store: SearchStore, resume_text: str, progress: Cal
     for i, job in enumerate(kept):
         job["fit"] = fit_score(job, resume_text)
         job.update(explain(job, entries))
+        store.read_fit(job)
         if i % 20 == 0:
             progress("ranking", i, len(kept))
 
@@ -692,6 +702,7 @@ def rank_found(store: "SearchStore", rid: str, text: str, resume_text: str) -> N
             note = rec.get("why", [])
             job.update(explain(job, resume_entries(resume_text)))
             job["why"] = note + [w for w in job.get("why", []) if w not in note]
+            store.read_fit(job)
             rec.update({k: job[k] for k in ("years", "deadline", "sponsorship", "clearance", "fit", "why", "gaps")})
             rec["text"] = text[:40000]
         store.save(data)
